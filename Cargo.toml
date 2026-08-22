@@ -1,0 +1,10 @@
+[package]
+name = "stm32_spi_gryoscope"
+version = "0.1.0"
+edition = "2021"
+authors = ["Tan Dao"]
+
+[dependencies]
+auxiliary = { path = "auxiliary" }
+cortex-m-rt = "0.6.15"
+stm32f3-discovery = "0.7.2"
