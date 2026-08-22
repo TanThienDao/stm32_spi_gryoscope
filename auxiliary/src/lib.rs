@@ -31,6 +31,11 @@ pub fn init() -> (
     let mut rcc = dp.RCC.constrain();
     let clocks = rcc.cfgr.freeze(&mut flash.acr);
 
+    //==============================================================
+    // SPI1 Configuration Start
+    //==============================================================
+
+    // Configure GPIOA and GPIOE for SPI and CS pin
     let mut gpioa = dp.GPIOA.split(&mut rcc.ahb);
     let mut gpioe = dp.GPIOE.split(&mut rcc.ahb);
 
@@ -50,21 +55,27 @@ pub fn init() -> (
         .pe3
         .into_push_pull_output(&mut gpioe.moder, &mut gpioe.otyper);
 
-    // SPI configuration
-    // SPI mode ? requires by I3G4250D
+
+    // SPI mode required by I3G4250D
+    // Condition: CPOL=1, CPHA=1 (Mode 3)
+    // Configuration: Clock Polarity = Idle High,
+    // Clock Phase = Capture on Second Transition
     let mode = Mode {
-        polarity: Polarity::IdleHigh,
-        phase: Phase::CaptureOnSecondTransition,
+        polarity: Polarity::IdleHigh,               // Clock idle state is high (CPOL=1)
+        phase: Phase::CaptureOnSecondTransition,    // Capture on second clock transition (falling edge for CPOL=1)
     };
 
     let spi = Spi::spi1(
         dp.SPI1,
         (sck, miso, mosi),
         mode,
-        Hertz(1_000_000), // 1 MHz
+        Hertz(1_000_000), // 1 MHz Config clock baud rate, can be adjusted based on the gyroscope's datasheet
         clocks,
         &mut rcc.apb2,
     );
+    //==============================================================
+    // SPI1 Configuration End
+    //==============================================================
 
     let delay = Delay::new(cp.SYST, clocks);
 

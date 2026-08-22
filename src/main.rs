@@ -35,5 +35,7 @@ fn main() -> ! {
 
     // We found out that our gyroscope is I3G4250D, so we can use the I3G4250D driver to read data from it.
 
-    loop {}
+    loop {
+
+    }
 }
