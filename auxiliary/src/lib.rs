@@ -50,19 +50,22 @@ pub fn init() -> (
         .pa7
         .into_af5_push_pull(&mut gpioa.moder, &mut gpioa.otyper, &mut gpioa.afrl);
 
-    // PE3 CS pin
+    // PE3 CS pin (in STM32F3, this is the NSS Slave Select pin)
     let cs = gpioe
         .pe3
         .into_push_pull_output(&mut gpioe.moder, &mut gpioe.otyper);
 
-
     // SPI mode required by I3G4250D
+    // There are four SPI modes, defined by the combination of
+    // Clock Polarity (CPOL) and Clock Phase (CPHA):
+    //
     // Condition: CPOL=1, CPHA=1 (Mode 3)
-    // Configuration: Clock Polarity = Idle High,
-    // Clock Phase = Capture on Second Transition
+    // Configuration:
+    //   Clock Polarity = Idle High, Active Low.
+    //   Clock Phase = Capture on Second Transition, trailing edge of the clock pulse.
     let mode = Mode {
-        polarity: Polarity::IdleHigh,               // Clock idle state is high (CPOL=1)
-        phase: Phase::CaptureOnSecondTransition,    // Capture on second clock transition (falling edge for CPOL=1)
+        polarity: Polarity::IdleHigh, // Clock idle state is high (CPOL=1)
+        phase: Phase::CaptureOnSecondTransition, // Capture on second clock transition (falling edge for CPOL=1)
     };
 
     let spi = Spi::spi1(
@@ -93,7 +96,7 @@ where
     const WHO_AM_I: u8 = 0x0F;
     let mut buffer = [0u8; 2];
 
-    // Set CS low before starting the SPI transaction
+    // Set CS low before starting the SPI transaction (in STM32F3 this is NSS Slave Select pin, active low)
     cs.set_low().ok();
 
     // Prepare buffer: first byte is address, second byte will contain response
@@ -107,9 +110,9 @@ where
 
             // buffer[1] contains the response
             match buffer[1] {
-                0xD4 => Ok("L3GD20"),       // L3GD20 is 11010100 is D4h
-                0xD3 => Ok("I3G4250D"),     // I3G4250D is 11010011 is D3h
-                0xD7 => Ok("L3GD20H"),      // L3GD20H is 11010111 is D7h
+                0xD4 => Ok("L3GD20"),   // L3GD20 is 11010100 is D4h
+                0xD3 => Ok("I3G4250D"), // I3G4250D is 11010011 is D3h
+                0xD7 => Ok("L3GD20H"),  // L3GD20H is 11010111 is D7h
                 _ => Err("Unknown gyroscope device"),
             }
         }
@@ -156,9 +159,9 @@ where
 
     // Identify variant based on WHO_AM_I byte
     match who_am_i {
-        0xD3 => Ok(GyroVariant::I3g4250d),  // I3G4250D is 11010011 is D3h
-        0xD4 => Ok(GyroVariant::L3gd20),    // L3GD20 is 11010100 is D4h
-        0xD7 => Ok(GyroVariant::L3gd20h),   // L3GD20H is 11010111 is D7h
+        0xD3 => Ok(GyroVariant::I3g4250d), // I3G4250D is 11010011 is D3h
+        0xD4 => Ok(GyroVariant::L3gd20),   // L3GD20 is 11010100 is D4h
+        0xD7 => Ok(GyroVariant::L3gd20h),  // L3GD20H is 11010111 is D7h
         other => Ok(GyroVariant::Unknown(other)),
     }
 }

@@ -3,6 +3,10 @@ name = "auxiliary"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+std = []
+
 [dependencies]
 cortex-m = "0.7.9"
 cortex-m-rt = "0.6.15"
@@ -11,3 +15,13 @@ panic-halt = "1.0.0"
 stm32f3-discovery = "0.7.2"
 i3g4250d = "0.3.0"
 embedded-hal = "0.2.7"
+
+[dev-dependencies]
+embedded-hal = "0.2.7"
+
+[[test]]
+name = "integration_tests"
+path = "tests/integration_tests.rs"
+
+[profile.test]
+opt-level = 0
