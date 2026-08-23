@@ -93,6 +93,7 @@ where
 {
     // Read the WHO_AM_I register (0x0F)
     // For SPI read, set MSB to 1: 0x0F | 0x80 = 0x8F
+    // Check section 5.2 of the I3G4250D datasheet for details on the SPI read protocol..
     const WHO_AM_I: u8 = 0x0F;
     let mut buffer = [0u8; 2];
 
@@ -144,7 +145,8 @@ where
     CS: OutputPin,
 {
     // SPI Read Protocol: Bit 0 = 1 (Read mode) | Bit 1 = 0 (Single byte) | Bits 2-7 = Reg address (0x0F)[cite: 1]
-    let mut buffer = [0x0F | 0x80, 0x00];
+    // Check section 5.2 of the I3G4250D datasheet for details on the SPI read protocol..
+    let mut buffer = [0x0F | 0x80, 0x00]; // Master's data to send: [WHO_AM_I | 0x80 (Read mode), dummy byte for response]
 
     // Execute SPI transaction
     cs.set_low().ok();

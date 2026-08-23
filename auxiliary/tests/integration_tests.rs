@@ -63,6 +63,7 @@ impl OutputPin for MockCs {
 }
 
 #[test]
+/// Test the detection of I3G4250D gyroscope
 fn test_detect_i3g4250d() {
     let mut spi = MockSpi::new(vec![0x00, 0xD3]); // Simulate WHO_AM_I response for I3G4250D
     let mut cs = MockCs::new();
@@ -74,6 +75,7 @@ fn test_detect_i3g4250d() {
 }
 
 #[test]
+/// Test the detection of L3GD20 gyroscope
 fn test_detect_l3gd20() {
     let mut spi = MockSpi::new(vec![0x00, 0xD4]);
     let mut cs = MockCs::new();
@@ -83,6 +85,7 @@ fn test_detect_l3gd20() {
 }
 
 #[test]
+/// Test the detection of L3GD20H gyroscope
 fn test_detect_l3gd20h() {
     let mut spi = MockSpi::new(vec![0x00, 0xD7]);
     let mut cs = MockCs::new();
@@ -92,6 +95,7 @@ fn test_detect_l3gd20h() {
 }
 
 #[test]
+/// Test the detection of an unknown gyroscope
 fn test_detect_unknown_gyroscope() {
     let mut spi = MockSpi::new(vec![0x00, 0xFF]);
     let mut cs = MockCs::new();
@@ -101,6 +105,7 @@ fn test_detect_unknown_gyroscope() {
 }
 
 #[test]
+/// Test the control of the CS pin
 fn test_cs_pin_control() {
     let mut spi = MockSpi::new(vec![0x00, 0xD3]);
     let mut cs = MockCs::new();
