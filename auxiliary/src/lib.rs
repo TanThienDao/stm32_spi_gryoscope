@@ -4,6 +4,7 @@
 extern crate panic_itm;
 
 pub use cortex_m::{
+    self,
     asm, interrupt, iprint, iprintln,
     peripheral::{Peripherals, DWT, ITM, NVIC, SYST},
 };
@@ -17,6 +18,10 @@ pub use stm32f3_discovery::stm32f3xx_hal::{
     spi::{MisoPin, Mode, MosiPin, Phase, Polarity, SckPin, Spi},
     time::rate::Hertz,
 };
+
+// Custom driver module for I3G4250D
+pub mod gyro_driver;
+pub use gyro_driver::{GyroDriver, DataRate, Range};
 
 pub fn init() -> (
     ITM,
