@@ -1,4 +1,4 @@
-use auxiliary::{detect_gyroscope, GyroVariant};
+use auxiliary::{detect_gyroscope, GyroVariant, calculate_timer_values};
 use embedded_hal::blocking::spi::Transfer;
 use embedded_hal::digital::v2::OutputPin;
 
@@ -112,4 +112,12 @@ fn test_cs_pin_control() {
     let _ = detect_gyroscope(&mut spi, &mut cs);
     assert!(cs.low_called, "CS pin should be pulled low");
     assert!(cs.high_called, "CS pin should be pulled high");
+}
+
+#[test]
+/// Test calculate psc and arr value.
+fn test_calculate_timer_values() {
+    let (psc, arr) = calculate_timer_values(72_000_000, 1_00_000, 400);
+    assert_eq!(psc, 719);
+    assert_eq!(arr, 249);
 }

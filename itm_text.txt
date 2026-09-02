@@ -6013,3 +6013,34 @@ X:   -4.36°/s | Y:    0.37°/s | Z:   -0.33°/s
 X:   -0.91°/s | Y:    0.10°/s | Z:   -0.52°/s
 X:   -0.52°/s | Y:    0.10°/s | Z:   -0.61°/s
 X:   -0.47°/s | Y:    0.23°/s | Z:   -0.10°/s
+===============================
+I3G4250D Gyroscope Demo
+===============================
+
+Step 1: Detecting gyroscope...
+✓ Found: I3g4250d
+
+Step 2: Initializing custom driver...
+✓ WHO_AM_I confirmed: 0xD3
+
+Step 3: Configuring gyroscope...
+✓ Configuration complete:
+  - Data Rate: 400 Hz
+  - Range: 500 °/s
+  - All axes enabled
+
+Step 4: Starting sensor readings...
+
+Angular Velocity (°/s):
+───────────────────────
+X:   -0.72°/s | Y:   -0.02°/s | Z:   -0.81°/s
+X:    0.25°/s | Y:    0.23°/s | Z:   -0.52°/s
+X:   -0.38°/s | Y:    0.37°/s | Z:   -0.35°/s
+X:   -0.68°/s | Y:    0.46°/s | Z:   -0.16°/s
+X:   -0.31°/s | Y:    0.00°/s | Z:   -0.44°/s
+X:   -0.04°/s | Y:    0.17°/s | Z:   -0.52°/s
+X:    0.00°/s | Y:    0.58°/s | Z:   -0.46°/s
+X:   -0.26°/s | Y:    0.00°/s | Z:   -0.10°/s
+X:   -0.42°/s | Y:   -0.02°/s | Z:   -0.75°/s
+X:   -0.19°/s | Y:    0.05°/s | Z:   -0.54°/s
+X:   -0.38°/s | Y:    0.67°/s | Z:   -0.16°/s

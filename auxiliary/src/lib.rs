@@ -5,18 +5,20 @@ extern crate panic_itm;
 
 pub use cortex_m::{
     self,
-    asm, interrupt, iprint, iprintln,
-    peripheral::{Peripherals, DWT, ITM, NVIC, SYST},
+    asm, iprint, iprintln,
+    interrupt::{self, Mutex,free},
+    peripheral::{Peripherals, DWT, ITM, NVIC, SYST}
 };
-pub use cortex_m_rt::entry;
+pub use cortex_m_rt::{entry};
 use embedded_hal::blocking::spi::Transfer;
 use embedded_hal::digital::v2::OutputPin;
 pub use stm32f3_discovery::stm32f3xx_hal::{
     delay::Delay,
-    pac::{self, SPI1},
+    pac::{self, SPI1,TIM2},
     prelude::*,
     spi::{MisoPin, Mode, MosiPin, Phase, Polarity, SckPin, Spi},
     time::rate::Hertz,
+
 };
 
 // Custom driver module for I3G4250D
@@ -28,9 +30,11 @@ pub fn init() -> (
     Delay,
     Spi<SPI1, (impl SckPin<SPI1>, impl MisoPin<SPI1>, impl MosiPin<SPI1>)>,
     impl OutputPin,
+    DWT,
 ) {
     let cp = Peripherals::take().unwrap();
     let dp = pac::Peripherals::take().unwrap();
+    let dwt = cp.DWT;
 
     let mut flash = dp.FLASH.constrain();
     let mut rcc = dp.RCC.constrain();
@@ -87,7 +91,7 @@ pub fn init() -> (
 
     let delay = Delay::new(cp.SYST, clocks);
 
-    (cp.ITM, delay, spi, cs)
+    (cp.ITM, delay, spi, cs,dwt)
 }
 pub fn identify_gryoscope<PINS, CS>(
     spi: &mut Spi<SPI1, PINS>,
@@ -170,5 +174,62 @@ where
         0xD4 => Ok(GyroVariant::L3gd20),   // L3GD20 is 11010100 is D4h
         0xD7 => Ok(GyroVariant::L3gd20h),  // L3GD20H is 11010111 is D7h
         other => Ok(GyroVariant::Unknown(other)),
+    }
+}
+
+/// Calculate prescaler and period values for desired interrupt frequency base on the timer clock.
+///  return psc and arr values
+pub fn calculate_timer_values(
+    cpu_clock_hz: u32,
+    target_timer_freq_hz: u32,
+    target_interrupt_freq_hz: u32,
+) -> (u16,u32){
+    // PSC (CPU_clock / (target_timer_freq)) - 1
+    let psc = (cpu_clock_hz / target_timer_freq_hz) - 1;
+
+    // ARR (target_timer_freq / target_interrupt_freq) - 1
+    let arr = (target_timer_freq_hz / target_interrupt_freq_hz) - 1;
+    (psc as u16, arr)
+}
+/// Initialize TIM2 with calculated prescaler and auto-reload values.
+/// Set PSC and ARR, enable counter, and configure update interrupt.
+/// Setup NVIC to unmask TIM2 interrupt.
+pub fn config_tim2<'t>(tim2: &'t mut TIM2, psc: u16,arr:u32) -> &'t mut TIM2{
+    // ====== TIM2 Configuration Start ======
+    //Step 1:  Set PSC: Prescaler (divides input clock frequency)
+    tim2.psc.write(|w| w.psc().bits(psc));
+    //Step 2: Set ARR: Auto-reload register (defines the period of the timer)
+    tim2.arr.write(|w| w.arr().bits(arr));
+    //Step 3: Enable counter and update event generation
+    tim2.cr1.write(|w| {
+        w.cen().set_bit()         // Counter enabled
+            .udis().clear_bit()          // Update event enabled
+            .dir().clear_bit()           // Count up
+            .arpe().clear_bit()                  // Auto-reload preload disabled
+    });
+    //Step 4: Enable TIM2 interrupt on update event (UIE)
+    tim2.dier.write(|w| w.uie().set_bit());
+    tim2
+}
+
+pub fn init_tim2<'t>(
+    device_peripheral: &mut pac::Peripherals,
+    tim2: &'t mut TIM2,
+    cpu_clock_hz: u32,
+    target_timer_freq_hz: u32,
+    target_interrupt_freq_hz: u32,
+) -> &'t TIM2 {
+    // Enable TIM2 clock in RCC (APB1ENR register)
+    device_peripheral.RCC.apb1enr.modify(|_, w| w.tim2en().set_bit());
+
+    // Calculate prescaler and auto-reload values
+    let (psc, arr) = calculate_timer_values(cpu_clock_hz, target_timer_freq_hz, target_interrupt_freq_hz);
+    config_tim2(tim2, psc, arr)
+}
+
+pub fn enable_tim2_interrupt() {
+    // Unmask TIM2 interrupt in NVIC (allow CPU to accept TIM2 interrupts)
+    unsafe {
+        NVIC::unmask(pac::Interrupt::TIM2);
     }
 }
