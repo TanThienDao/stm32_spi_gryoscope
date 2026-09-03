@@ -1,4 +1,4 @@
-use auxiliary::{detect_gyroscope, GyroVariant, calculate_timer_values};
+use auxiliary::{detect_gyroscope, GyroVariant};
 use embedded_hal::blocking::spi::Transfer;
 use embedded_hal::digital::v2::OutputPin;
 
