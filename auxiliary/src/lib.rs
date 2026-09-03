@@ -6,7 +6,7 @@ extern crate panic_itm;
 pub use cortex_m::{
     self,
     asm, iprint, iprintln,
-    interrupt::{self, Mutex,free},
+    //interrupt::{self, Mutex,free},
     peripheral::{Peripherals, DWT, ITM, NVIC, SYST}
 };
 pub use cortex_m_rt::{entry};
@@ -18,12 +18,16 @@ pub use stm32f3_discovery::stm32f3xx_hal::{
     prelude::*,
     spi::{MisoPin, Mode, MosiPin, Phase, Polarity, SckPin, Spi},
     time::rate::Hertz,
+    interrupt::{self},
 
 };
 
 // Custom driver module for I3G4250D
 pub mod gyro_driver;
 pub use gyro_driver::{GyroDriver, DataRate, Range};
+
+// Interrupt handler module for Phase 2
+pub mod interrupt_handler;
 
 pub fn init() -> (
     ITM,
@@ -33,9 +37,10 @@ pub fn init() -> (
     DWT,
 ) {
     let cp = Peripherals::take().unwrap();
-    let dp = pac::Peripherals::take().unwrap();
+    let mut dp = pac::Peripherals::take().unwrap();
+    // Enable TIM2 clock in RCC (APB1ENR)
+    dp.RCC.apb1enr.modify(|_, w| w.tim2en().set_bit());
     let dwt = cp.DWT;
-
     let mut flash = dp.FLASH.constrain();
     let mut rcc = dp.RCC.constrain();
     let clocks = rcc.cfgr.freeze(&mut flash.acr);
@@ -76,7 +81,6 @@ pub fn init() -> (
         polarity: Polarity::IdleHigh, // Clock idle state is high (CPOL=1)
         phase: Phase::CaptureOnSecondTransition, // Capture on second clock transition (falling edge for CPOL=1)
     };
-
     let spi = Spi::spi1(
         dp.SPI1,
         (sck, miso, mosi),
@@ -90,6 +94,8 @@ pub fn init() -> (
     //==============================================================
 
     let delay = Delay::new(cp.SYST, clocks);
+    //init TIM2 for interrupt-driven updates
+    init_tim2(&mut dp.TIM2, 72_000_000, 100_000, 400);
 
     (cp.ITM, delay, spi, cs,dwt)
 }
@@ -194,7 +200,7 @@ pub fn calculate_timer_values(
 /// Initialize TIM2 with calculated prescaler and auto-reload values.
 /// Set PSC and ARR, enable counter, and configure update interrupt.
 /// Setup NVIC to unmask TIM2 interrupt.
-pub fn config_tim2<'t>(tim2: &'t mut TIM2, psc: u16,arr:u32) -> &'t mut TIM2{
+pub fn config_tim2(tim2: &mut TIM2, psc: u16,arr:u32) -> &mut TIM2{
     // ====== TIM2 Configuration Start ======
     //Step 1:  Set PSC: Prescaler (divides input clock frequency)
     tim2.psc.write(|w| w.psc().bits(psc));
@@ -212,15 +218,12 @@ pub fn config_tim2<'t>(tim2: &'t mut TIM2, psc: u16,arr:u32) -> &'t mut TIM2{
     tim2
 }
 
-pub fn init_tim2<'t>(
-    device_peripheral: &mut pac::Peripherals,
-    tim2: &'t mut TIM2,
+pub fn init_tim2(
+    tim2: &mut TIM2,
     cpu_clock_hz: u32,
     target_timer_freq_hz: u32,
     target_interrupt_freq_hz: u32,
-) -> &'t TIM2 {
-    // Enable TIM2 clock in RCC (APB1ENR register)
-    device_peripheral.RCC.apb1enr.modify(|_, w| w.tim2en().set_bit());
+) -> & TIM2 {
 
     // Calculate prescaler and auto-reload values
     let (psc, arr) = calculate_timer_values(cpu_clock_hz, target_timer_freq_hz, target_interrupt_freq_hz);
@@ -231,5 +234,56 @@ pub fn enable_tim2_interrupt() {
     // Unmask TIM2 interrupt in NVIC (allow CPU to accept TIM2 interrupts)
     unsafe {
         NVIC::unmask(pac::Interrupt::TIM2);
+    }
+}
+#[derive(Debug)]
+pub struct Tim2Guard{
+    initialized: bool,
+}
+
+impl Tim2Guard {
+    /// Initialize TIM2 once safely
+    pub fn new() -> Self {
+        Tim2Guard { initialized: false }
+    }
+    pub fn init(&mut self) -> Option<()> {
+        if self.initialized {
+            return None;
+        }
+        self.initialized = true;
+        // This should be called only one from main
+        cortex_m::interrupt::free(|_| {
+            Some(())
+        })
+    }
+    pub fn check_and_clear_uif() -> bool {
+        let dp = unsafe { pac::Peripherals::steal() };
+        let uif = dp.TIM2.sr.read().uif().bit_is_set();
+        if uif {
+            // Clear the interrupt flag
+            dp.TIM2.sr.write(|w| w.uif().clear_bit());
+        }
+        uif
+    }
+}
+#[derive(Debug)]
+pub struct NvicGuard{
+    // This struct is used to ensure that NVIC unmasking is done safely and only once.
+    initialized: bool,
+}
+
+impl NvicGuard {
+    pub fn new() -> Self {
+        NvicGuard { initialized: false }
+    }
+    pub fn unmask_tim2_safe(&mut self) -> Result<(), &'static str> {
+        if self.initialized {
+            return Err("Already initialized"); // Already initialized, do nothing
+        }
+        unsafe {
+            NVIC::unmask(pac::Interrupt::TIM2);
+        }
+        self.initialized = true;
+        Ok(())
     }
 }

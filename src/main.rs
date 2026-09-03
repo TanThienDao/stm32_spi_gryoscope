@@ -1,66 +1,20 @@
-#![deny(unsafe_code)]
+//#![deny(unsafe_code)]
 #![no_main]
 #![no_std]
 
 use auxiliary::*;
-use core::cell::RefCell;
 use cortex_m_rt::entry;
-use cortex_m::interrupt::Mutex;
 use cortex_m::peripheral::DWT;
+use auxiliary::interrupt_handler::NEW_DATA_READY;
 
-// Note: TIM2_PERIPHERAL and NEW_DATA_AVAILABLE are commented out for polling mode
-// Uncomment when implementing interrupt-driven mode
-// static mut TIM2_PERIPHERAL: Option<TIM2> = None;
-// static NEW_DATA_AVAILABLE: Mutex<RefCell<bool>> = Mutex::new(RefCell::new(false));
-
-// Note: TIM2_PERIPHERAL and NEW_DATA_AVAILABLE are commented out for polling mode
-// Uncomment when implementing interrupt-driven mode
-// static mut TIM2_PERIPHERAL: Option<TIM2> = None;
-// static NEW_DATA_AVAILABLE: Mutex<RefCell<bool>> = Mutex::new(RefCell::new(false));
-
-// Note: SENSOR_DATA is kept for future interrupt-based implementation
-// Currently using polling mode - data is read directly in the main loop
-#[allow(dead_code)]
-static SENSOR_DATA: Mutex<RefCell<(f32, f32, f32)>> = Mutex::new(RefCell::new((0.0, 0.0, 0.0)));
-// ==== End of Shared Data Buffer ====
-
-// ==== Interrupt Handler for TIM2 ====
-// Note: Interrupt support requires device-specific configuration.
-// For now, gyroscope reading is done via polling in the main loop.
-// Uncomment and configure when implementing RTOS-based interrupt handling.
-//
-// #[interrupt]
-// fn TIM2() {
-//     //  Enter critical section to safely access shared resources
-//     // Interrupt is disabled here, so we can safely access shared resources without race conditions
-//     // Interrupts are automatically re-enabled when we exit the critical section
-//     free(|cs| {
-//         //Step 1: Clear the interrupt flag to acknowledge the interrupt
-//         // CRITICAL - Clear interrupt flag
-//         // without this, the timer is blocked and won't fire again! \O_O/
-//         unsafe {
-//             // Clear the TIM2 interrupt flag
-//             if let Some(tim2) = TIM2_PERIPHERAL.as_mut() {
-//                 // Clear the update interrupt flag (UIF) to acknowledge the interrupt
-//                 tim2.sr.modify(|_, w| w.uif().clear_bit());
-//             }
-//         }
-//
-//         // Step 2: Read data from shared buffer if needed
-//         // Note: GYRO_DRIVER_MUTEX access removed for simplicity
-//         // Reading is done in the main thread only
-//     });
-// }
+// Note: Phase 2 uses timer interrupt flag polling instead of ISR
+// This provides efficient timer-based updates without macro complications
 
 #[entry]
 fn main() -> ! {
     let (mut itm, _delay, mut spi, mut cs, mut dwt) = init();
 
-    iprintln!(&mut itm.stim[0], "===============================");
-    iprintln!(&mut itm.stim[0], "I3G4250D Gyroscope Demo");
-    iprintln!(&mut itm.stim[0], "===============================");
-
-    // Enable DWT cycle counter for precise timing
+    // Enable DWT cycle counter for measurements
     // DWT (Data Watchpoint and Trace) is a feature of ARM Cortex-M
     // processors that provides a cycle counter,
     // which can be used for profiling and measuring execution time.
@@ -69,10 +23,14 @@ fn main() -> ! {
     // which is useful for performance analysis and debugging.
     dwt.enable_cycle_counter();
 
+    iprintln!(&mut itm.stim[0], "===============================");
+    iprintln!(&mut itm.stim[0], "I3G4250D Gyroscope");
+    iprintln!(&mut itm.stim[0], "===============================");
+
+
     // Step 1: Identify the gyroscope
     iprintln!(&mut itm.stim[0], "");
     iprintln!(&mut itm.stim[0], "Step 1: Detecting gyroscope...");
-
     let variant = match detect_gyroscope(&mut spi, &mut cs) {
         Ok(var) => {
             iprintln!(&mut itm.stim[0], "✓ Found: {:?}", var);
@@ -84,172 +42,180 @@ fn main() -> ! {
         }
     };
 
-    // Step 2: Verify it's I3G4250D and initialize custom driver
-    iprintln!(&mut itm.stim[0], "");
-    iprintln!(&mut itm.stim[0], "Step 2: Initializing custom driver...");
-
     if variant != GyroVariant::I3g4250d {
-        iprintln!(&mut itm.stim[0], "✗ This demo is for I3G4250D only!");
+        iprintln!(&mut itm.stim[0], "✗ This requires I3G4250D!");
         loop {}
     }
-
+    // Step 2: initialize custom driver
+    iprintln!(&mut itm.stim[0], "");
+    iprintln!(&mut itm.stim[0], "Step 2: Initializing driver...");
     let mut gyro = GyroDriver::new(spi, cs);
 
-    // Verify WHO_AM_I
     match gyro.who_am_i() {
         Ok(id) => {
             if id == 0xD3 {
-                iprintln!(&mut itm.stim[0], "✓ WHO_AM_I confirmed: 0x{:02X}", id);
+                iprintln!(&mut itm.stim[0], "✓ WHO_AM_I: 0x{:02X}", id);
             } else {
-                iprintln!(
-                    &mut itm.stim[0],
-                    "✗ Unexpected WHO_AM_I value: 0x{:02X}",
-                    id
-                );
+                iprintln!(&mut itm.stim[0], "✗ Unexpected ID: 0x{:02X}", id);
                 loop {}
             }
         }
         Err(e) => {
-            iprintln!(&mut itm.stim[0], "✗ WHO_AM_I read failed: {}", e);
+            iprintln!(&mut itm.stim[0], "✗ WHO_AM_I failed: {}", e);
             loop {}
         }
     }
 
-    // Step 3: Configure gyroscope
-    iprintln!(&mut itm.stim[0], "");
-    iprintln!(&mut itm.stim[0], "Step 3: Configuring gyroscope...");
-
+    // Initialize the gyroscope
     if let Err(e) = gyro.init() {
         iprintln!(&mut itm.stim[0], "✗ Initialization error: {}", e);
         loop {}
     }
 
-    if let Err(e) = gyro.set_data_rate(DataRate::Hz100) {
+    // Step 3: Configure gyroscope
+    iprintln!(&mut itm.stim[0], "");
+    iprintln!(&mut itm.stim[0], "Step 3: Configuring sensor...");
+
+    if let Err(e) = gyro.set_data_rate(DataRate::Hz400) {
         iprintln!(&mut itm.stim[0], "✗ DataRate config error: {}", e);
         loop {}
     }
 
-    if let Err(e) = gyro.set_range(Range::DPS245) {
+    if let Err(e) = gyro.set_range(Range::DPS500) {
         iprintln!(&mut itm.stim[0], "✗ Range config error: {}", e);
         loop {}
     }
 
     iprintln!(&mut itm.stim[0], "✓ Configuration complete:");
-    iprintln!(&mut itm.stim[0], "  - Data Rate: 100 Hz");
-    iprintln!(&mut itm.stim[0], "  - Range: 245 °/s");
-    iprintln!(&mut itm.stim[0], "  - All axes enabled");
-
-    // Step 4: Start reading sensor data
+    iprintln!(&mut itm.stim[0], "  - Data Rate: 400 Hz (timer interrupt)");
+    iprintln!(&mut itm.stim[0], "  - Range: 500 °/s");
     iprintln!(&mut itm.stim[0], "");
-    iprintln!(&mut itm.stim[0], "Step 4: Starting sensor readings...");
+    iprintln!(&mut itm.stim[0], "Step 4: Starting interrupt-driven mode...");
+    iprintln!(&mut itm.stim[0], "──────────────────────────────────────");
     iprintln!(&mut itm.stim[0], "");
-    iprintln!(&mut itm.stim[0], "Angular Velocity (°/s):");
-    iprintln!(&mut itm.stim[0], "───────────────────────");
 
-    let mut counter: u32 = 0;
-    let mut prev_reading: (f32, f32, f32) = (0.0, 0.0, 0.0);
-    let mut abnomaly_counter: u32 = 0;
+    // ===== PHASE 2: MAIN LOOP =====
 
-    // Maximum allowed change per 0.25 ms sample
-    // Allow up to 100 °/s change per 0.25 ms sample (400 Hz ODR)
+    // Enable TIM2 Interrupt safely
+    let mut nvic_guard = NvicGuard::new();
+    if let Err(e) = nvic_guard.unmask_tim2_safe() {
+        iprintln!(&mut itm.stim[0], "✗ NVIC unmask error: {}", e);
+        loop {}
+    }
+
+    let mut counter = 0u32;
+    let mut prev_reading = (0.0f32, 0.0f32, 0.0f32);
+    let mut anomaly_count = 0u32;
     const MAX_DELTA: f32 = 100.0;
 
-    // ==== Power Mesurement variables ====
-    let mut total_cycles: u64 = 0;
-    let mut loop_iterations: u32 = 0;
+    let mut total_cycles = 0u64;
+    let mut loop_iterations = 0u32;
+    let mut main_loop_start = DWT::cycle_count();
 
-    // ==== Main Loop: Read Gyroscope Data ====
     loop {
-        // Record start time (in CPU cycles) for timing measurement
-        let start_cycles = DWT::cycle_count();
-        //iprintln!(&mut itm.stim[0], "Start Cycles: {}", start_cycles);
-        match gyro.read_angular_velocity() {
-            Ok((x, y, z)) => {
-                // Calculate elapsed cycles
-                let elapsed_cycles = DWT::cycle_count().wrapping_sub(start_cycles);
-                //iprintln!(&mut itm.stim[0], "Elapsed Cycles: {}", elapsed_cycles);
+        let should_sleep = cortex_m::interrupt::free(|cs| {
 
-                // Convert cycles to millisecounds
-                // CPU clock is 72 MHz, so 1 cycle = 1/72,000,000 seconds
-                let elapsed_ms = (elapsed_cycles as f64) / 72_000.0;
-                //Calculation Check:
-                //    Elapsed cycles: 15,440
-                //    CPU clock: 72 MHz (72,000 cycles per ms)
-                //    Time: 15,440 ÷ 72,000 = 0.214 ms ✓
+            let mut ready = NEW_DATA_READY.borrow(cs).borrow_mut();
+            if *ready {
+                *ready = false;  // Reset flag
+                // Read sensor data from gyro
+                match gyro.read_angular_velocity() {
+                    Ok((x, y, z)) => {
+                        // Consistency check
+                        let delta_x = (x - prev_reading.0).abs();
+                        let delta_y = (y - prev_reading.1).abs();
+                        let delta_z = (z - prev_reading.2).abs();
 
-                //======= Check Consistency =======
-                // Calculate the change in readings from the previous reading
-                let delta_x = (x - prev_reading.0).abs();
-                let delta_y = (y - prev_reading.1).abs();
-                let delta_z = (z - prev_reading.2).abs();
+                        // Flag if exceeds threshold
+                        if delta_x > MAX_DELTA || delta_y > MAX_DELTA || delta_z > MAX_DELTA {
+                            anomaly_count += 1;
+                            iprintln!(
+                            &mut itm.stim[0],
+                            "⚠️  ANOMALY #{}: Δx={:.2}, Δy={:.2}, Δz={:.2}",
+                            anomaly_count,
+                            delta_x,
+                            delta_y,
+                            delta_z
+                        );
+                        }
 
-                // Flag if any change exceeds the threshold
-                if delta_x > MAX_DELTA || delta_y > MAX_DELTA || delta_z > MAX_DELTA {
-                    abnomaly_counter += 1;
-                    iprintln!(
-                        &mut itm.stim[0],
-                        "⚠️ Abnormal reading detected! ΔX: {:.2}, ΔY: {:.2}, ΔZ: {:.2} | Count: {}",
-                        delta_x,
-                        delta_y,
-                        delta_z,
-                        abnomaly_counter
-                    );
+                        // Update previous reading
+                        prev_reading = (x, y, z);
+
+                        if counter % 4 == 0 {
+                            iprintln!(
+                            &mut itm.stim[0],
+                            "X: {:7.2}°/s | Y: {:7.2}°/s | Z: {:7.2}°/s",
+                            x,
+                            y,
+                            z
+                        );
+                        }
+                        counter += 1;
+
+                        // Measure loop performance
+                        let now = DWT::cycle_count();
+                        let loop_cycles = now.wrapping_sub(main_loop_start);
+                        total_cycles = total_cycles.wrapping_add(loop_cycles as u64);
+                        loop_iterations += 1;
+                        main_loop_start = now;
+
+                        // Print statistics every 1000 iterations (~2.5s at 400 Hz)
+                        if loop_iterations % 1000 == 0 {
+                            let avg_cycles = (total_cycles / 1000) as u32;
+
+                            // Convert cycles to microseconds (72 MHz = 72 cycles per μs)
+                            let loop_time_us = avg_cycles as f64 / 72.0;
+
+                            // Total measurement period: 1000 iterations at 400 Hz
+                            // = 1000 / 400 Hz = 2.5 seconds = 2,500,000 microseconds
+                            let total_period_us = 2_500_000.0;
+
+                            // CPU Usage = (Time spent executing / Total measurement time) × 100%
+                            let cpu_usage = (loop_time_us / total_period_us) * 100.0;
+
+                            iprintln!(&mut itm.stim[0], "");
+                            iprintln!(&mut itm.stim[0], "📊 Interrupt Stats (every 1000 loops / ~2.5s):");
+                            iprintln!(&mut itm.stim[0], "  Avg Cycles/Loop: {}", avg_cycles);
+                            iprintln!(&mut itm.stim[0], "  Loop Time: {:.3}μs", loop_time_us);
+                            iprintln!(&mut itm.stim[0], "  Anomalies: {}", anomaly_count);
+                            iprintln!(&mut itm.stim[0], "  CPU Usage: {:.2}%", cpu_usage);
+                            iprintln!(&mut itm.stim[0], "──────────────────────────────────────");
+
+                            total_cycles = 0;
+                        }
+                    }
+                    Err(e) => {
+                        iprintln!(&mut itm.stim[0], "✗ Read error: {}", e);
+                        loop {}
+                    }
                 }
-
-                // Update previous reading for next iteration
-                prev_reading = (x, y, z);
-
-                // Print every 4th reading (~100ms at 400Hz, every ~10.5ms per read)
-                if counter % 4 == 0 {
-                    iprintln!(
-                        &mut itm.stim[0],
-                        "X: {:7.2}°/s | Y: {:7.2}°/s | Z: {:7.2}°/s | Elapsed: {:.6} ms",
-                        x,
-                        y,
-                        z,
-                        elapsed_ms
-                    );
-                }
-                counter += 1;
+                false // Don't sleep if we processed data
             }
-            Err(e) => {
-                iprintln!(&mut itm.stim[0], "✗ Read error: {}", e);
-                loop {}
+            else {
+                //iprintln!(&mut itm.stim[0], "Sleeping until next timer interrupt...");
+                true // Signal to sleep when no data ready
             }
+        });
+
+        if should_sleep {
+            // If no data ready, just loop back (low CPU usage when sleeping)
+            //iprintln!(&mut itm.stim[0], "Waiting for timer interrupt...");
+            cortex_m::asm::wfe();
         }
 
-        // Small delay between reads (approximate timing)
-        // At 380Hz ODR, new data available every ~2.6ms
-        // Adding extra delay for readability of ITM output
-        for _ in 0..10_000 {
-            cortex_m::asm::nop();
-        }
-
-        // ===== Calculate Loop time and Power Measurement =====
-        let loop_end_cycles = DWT::cycle_count().wrapping_sub(start_cycles);
-        total_cycles = total_cycles.wrapping_add(loop_end_cycles as u64);
-        loop_iterations += 1;
-
-        // Print statistics every 1000 iteration
-        if loop_iterations % 1000 == 0 {
-            let avg_cycles = total_cycles / 1000 as u64;
-            let avg_ms = (avg_cycles as f64) / 72_000.0;
-            iprintln!(&mut itm.stim[0], "------------------------------");
-            iprintln!(
-                &mut itm.stim[0],
-                "📊 Baseline Stats (every 1000 loops / ~2.5s):"
-            );
-            iprintln!(
-                &mut itm.stim[0],
-                "| Average Loop Time: {:.6} ms |\n\
-                | Average Cycles/Loop: {}    |\n\
-                | Loops {}                      |\n",
-                avg_ms,
-                avg_cycles,
-                loop_iterations
-            );
-            iprintln!(&mut itm.stim[0], "------------------------------");
-            total_cycles = 0;
-        }
     }
+}
+#[allow(non_snake_case)]
+#[no_mangle]
+pub extern "C" fn TIM2() {
+    use auxiliary::interrupt_handler::NEW_DATA_READY;
+    use cortex_m::interrupt;
+
+    // Clear flag safely through helper
+    let _ = auxiliary::Tim2Guard::check_and_clear_uif();
+
+    interrupt::free(|cs| {
+        *NEW_DATA_READY.borrow(cs).borrow_mut() = true;
+    });
 }
