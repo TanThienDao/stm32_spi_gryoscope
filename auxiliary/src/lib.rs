@@ -95,7 +95,8 @@ pub fn init() -> (
 
     let delay = Delay::new(cp.SYST, clocks);
     //init TIM2 for interrupt-driven updates
-    init_tim2(&mut dp.TIM2, 72_000_000, 100_000, 400);
+    let mut tim2 = Tim2Guard::new();
+    tim2.init(&mut dp.TIM2);
 
     (cp.ITM, delay, spi, cs,dwt)
 }
@@ -183,59 +184,6 @@ where
     }
 }
 
-/// Calculate prescaler and period values for desired interrupt frequency base on the timer clock.
-///  return psc and arr values
-pub fn calculate_timer_values(
-    cpu_clock_hz: u32,
-    target_timer_freq_hz: u32,
-    target_interrupt_freq_hz: u32,
-) -> (u16,u32){
-    // PSC (CPU_clock / (target_timer_freq)) - 1
-    let psc = (cpu_clock_hz / target_timer_freq_hz) - 1;
-
-    // ARR (target_timer_freq / target_interrupt_freq) - 1
-    let arr = (target_timer_freq_hz / target_interrupt_freq_hz) - 1;
-    (psc as u16, arr)
-}
-/// Initialize TIM2 with calculated prescaler and auto-reload values.
-/// Set PSC and ARR, enable counter, and configure update interrupt.
-/// Setup NVIC to unmask TIM2 interrupt.
-pub fn config_tim2(tim2: &mut TIM2, psc: u16,arr:u32) -> &mut TIM2{
-    // ====== TIM2 Configuration Start ======
-    //Step 1:  Set PSC: Prescaler (divides input clock frequency)
-    tim2.psc.write(|w| w.psc().bits(psc));
-    //Step 2: Set ARR: Auto-reload register (defines the period of the timer)
-    tim2.arr.write(|w| w.arr().bits(arr));
-    //Step 3: Enable counter and update event generation
-    tim2.cr1.write(|w| {
-        w.cen().set_bit()         // Counter enabled
-            .udis().clear_bit()          // Update event enabled
-            .dir().clear_bit()           // Count up
-            .arpe().clear_bit()                  // Auto-reload preload disabled
-    });
-    //Step 4: Enable TIM2 interrupt on update event (UIE)
-    tim2.dier.write(|w| w.uie().set_bit());
-    tim2
-}
-
-pub fn init_tim2(
-    tim2: &mut TIM2,
-    cpu_clock_hz: u32,
-    target_timer_freq_hz: u32,
-    target_interrupt_freq_hz: u32,
-) -> & TIM2 {
-
-    // Calculate prescaler and auto-reload values
-    let (psc, arr) = calculate_timer_values(cpu_clock_hz, target_timer_freq_hz, target_interrupt_freq_hz);
-    config_tim2(tim2, psc, arr)
-}
-
-pub fn enable_tim2_interrupt() {
-    // Unmask TIM2 interrupt in NVIC (allow CPU to accept TIM2 interrupts)
-    unsafe {
-        NVIC::unmask(pac::Interrupt::TIM2);
-    }
-}
 #[derive(Debug)]
 pub struct Tim2Guard{
     initialized: bool,
@@ -246,13 +194,14 @@ impl Tim2Guard {
     pub fn new() -> Self {
         Tim2Guard { initialized: false }
     }
-    pub fn init(&mut self) -> Option<()> {
+    pub fn init(&mut self, tim2: &mut TIM2) -> Option<()> {
         if self.initialized {
             return None;
         }
-        self.initialized = true;
         // This should be called only one from main
         cortex_m::interrupt::free(|_| {
+            self.init_tim2(tim2, 72_000_000, 100_000, 400);
+            self.initialized = true;
             Some(())
         })
     }
@@ -264,6 +213,53 @@ impl Tim2Guard {
             dp.TIM2.sr.write(|w| w.uif().clear_bit());
         }
         uif
+    }
+    pub fn init_tim2(
+        &mut self,
+        tim2: &mut TIM2,
+        cpu_clock_hz: u32,
+        target_timer_freq_hz: u32,
+        target_interrupt_freq_hz: u32,
+    ) {
+
+        // Calculate prescaler and auto-reload values
+        let (psc, arr) = self.calculate_timer_values(cpu_clock_hz, target_timer_freq_hz, target_interrupt_freq_hz);
+        self.config_tim2(tim2, psc, arr);
+    }
+    /// Initialize TIM2 with calculated prescaler and auto-reload values.
+    /// Set PSC and ARR, enable counter, and configure update interrupt.
+    /// Setup NVIC to unmask TIM2 interrupt.
+    pub fn config_tim2(&mut self, tim2: &mut TIM2, psc: u16,arr:u32){
+        // ====== TIM2 Configuration Start ======
+        //Step 1:  Set PSC: Prescaler (divides input clock frequency)
+        tim2.psc.write(|w| w.psc().bits(psc));
+        //Step 2: Set ARR: Auto-reload register (defines the period of the timer)
+        tim2.arr.write(|w| w.arr().bits(arr));
+        //Step 3: Enable counter and update event generation
+        tim2.cr1.write(|w| {
+            w.cen().set_bit()         // Counter enabled
+                .udis().clear_bit()          // Update event enabled
+                .dir().clear_bit()           // Count up
+                .arpe().clear_bit()                  // Auto-reload preload disabled
+        });
+        //Step 4: Enable TIM2 interrupt on update event (UIE)
+        tim2.dier.write(|w| w.uie().set_bit());
+    }
+
+    /// Calculate prescaler and period values for desired interrupt frequency base on the timer clock.
+    ///  return psc and arr values
+    pub fn calculate_timer_values(
+        &self,
+        cpu_clock_hz: u32,
+        target_timer_freq_hz: u32,
+        target_interrupt_freq_hz: u32,
+    ) -> (u16,u32){
+        // PSC (CPU_clock / (target_timer_freq)) - 1
+        let psc = (cpu_clock_hz / target_timer_freq_hz) - 1;
+
+        // ARR (target_timer_freq / target_interrupt_freq) - 1
+        let arr = (target_timer_freq_hz / target_interrupt_freq_hz) - 1;
+        (psc as u16, arr)
     }
 }
 #[derive(Debug)]
@@ -282,6 +278,8 @@ impl NvicGuard {
         }
         unsafe {
             NVIC::unmask(pac::Interrupt::TIM2);
+            //let mut nvic = Peripherals::steal().NVIC;
+            //nvic.set_priority(pac::Interrupt::TIM2, 100);
         }
         self.initialized = true;
         Ok(())
