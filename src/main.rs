@@ -96,7 +96,7 @@ fn main() -> ! {
 
     // ===== PHASE 2: MAIN LOOP =====
 
-    // Enable TIM2 Interrupt safely
+    //Step 5: Enable TIM2 Interrupt safely
     let mut nvic_guard = NvicGuard::new();
     if let Err(e) = nvic_guard.unmask_tim2_safe() {
         iprintln!(&mut itm.stim[0], "✗ NVIC unmask error: {}", e);
