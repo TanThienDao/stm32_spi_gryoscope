@@ -6,7 +6,6 @@ extern crate panic_itm;
 pub use cortex_m::{
     self,
     asm, iprint, iprintln,
-    //interrupt::{self, Mutex,free},
     peripheral::{Peripherals, DWT, ITM, NVIC, SYST}
 };
 pub use cortex_m_rt::{entry};
@@ -19,7 +18,6 @@ pub use stm32f3_discovery::stm32f3xx_hal::{
     spi::{MisoPin, Mode, MosiPin, Phase, Polarity, SckPin, Spi},
     time::rate::Hertz,
     interrupt::{self},
-
 };
 
 // Custom driver module for I3G4250D
@@ -38,7 +36,7 @@ pub fn init() -> (
 ) {
     let cp = Peripherals::take().unwrap();
     let mut dp = pac::Peripherals::take().unwrap();
-    // Enable TIM2 clock in RCC (APB1ENR)
+    //Step 0: Enable TIM2 clock in RCC (APB1ENR)
     dp.RCC.apb1enr.modify(|_, w| w.tim2en().set_bit());
     let dwt = cp.DWT;
     let mut flash = dp.FLASH.constrain();
@@ -277,7 +275,7 @@ impl NvicGuard {
             return Err("Already initialized"); // Already initialized, do nothing
         }
         unsafe {
-            NVIC::unmask(pac::Interrupt::TIM2);
+            NVIC::unmask(interrupt::TIM2);
             //let mut nvic = Peripherals::steal().NVIC;
             //nvic.set_priority(pac::Interrupt::TIM2, 100);
         }
