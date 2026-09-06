@@ -2,11 +2,11 @@
 #![no_main]
 #![no_std]
 
-use auxiliary::*;
-use auxiliary::nvic::NvicGuard;
-use cortex_m_rt::entry;
-use cortex_m::peripheral::DWT;
 use auxiliary::interrupt_handler::NEW_DATA_READY;
+use auxiliary::nvic::NvicGuard;
+use auxiliary::*;
+use cortex_m::peripheral::DWT;
+use cortex_m_rt::entry;
 
 // Note: Phase 2 uses timer interrupt flag polling instead of ISR
 // This provides efficient timer-based updates without macro complications
@@ -27,7 +27,6 @@ fn main() -> ! {
     iprintln!(&mut itm.stim[0], "===============================");
     iprintln!(&mut itm.stim[0], "I3G4250D Gyroscope");
     iprintln!(&mut itm.stim[0], "===============================");
-
 
     // Step 1: Identify the gyroscope
     iprintln!(&mut itm.stim[0], "");
@@ -91,7 +90,10 @@ fn main() -> ! {
     iprintln!(&mut itm.stim[0], "  - Data Rate: 400 Hz (timer interrupt)");
     iprintln!(&mut itm.stim[0], "  - Range: 500 °/s");
     iprintln!(&mut itm.stim[0], "");
-    iprintln!(&mut itm.stim[0], "Step 4: Starting interrupt-driven mode...");
+    iprintln!(
+        &mut itm.stim[0],
+        "Step 4: Starting interrupt-driven mode..."
+    );
     iprintln!(&mut itm.stim[0], "──────────────────────────────────────");
     iprintln!(&mut itm.stim[0], "");
 
@@ -115,11 +117,10 @@ fn main() -> ! {
 
     loop {
         let should_sleep = cortex_m::interrupt::free(|cs| {
-
             let mut ready = NEW_DATA_READY.borrow(cs).borrow_mut();
             if *ready {
-                *ready = false;  // Reset flag
-                // Read sensor data from gyro
+                *ready = false; // Reset flag
+                                // Read sensor data from gyro
                 match gyro.read_angular_velocity() {
                     Ok((x, y, z)) => {
                         // Consistency check
@@ -131,13 +132,13 @@ fn main() -> ! {
                         if delta_x > MAX_DELTA || delta_y > MAX_DELTA || delta_z > MAX_DELTA {
                             anomaly_count += 1;
                             iprintln!(
-                            &mut itm.stim[0],
-                            "⚠️  ANOMALY #{}: Δx={:.2}, Δy={:.2}, Δz={:.2}",
-                            anomaly_count,
-                            delta_x,
-                            delta_y,
-                            delta_z
-                        );
+                                &mut itm.stim[0],
+                                "⚠️  ANOMALY #{}: Δx={:.2}, Δy={:.2}, Δz={:.2}",
+                                anomaly_count,
+                                delta_x,
+                                delta_y,
+                                delta_z
+                            );
                         }
 
                         // Update previous reading
@@ -145,12 +146,12 @@ fn main() -> ! {
 
                         if counter % 4 == 0 {
                             iprintln!(
-                            &mut itm.stim[0],
-                            "X: {:7.2}°/s | Y: {:7.2}°/s | Z: {:7.2}°/s",
-                            x,
-                            y,
-                            z
-                        );
+                                &mut itm.stim[0],
+                                "X: {:7.2}°/s | Y: {:7.2}°/s | Z: {:7.2}°/s",
+                                x,
+                                y,
+                                z
+                            );
                         }
                         counter += 1;
 
@@ -176,7 +177,10 @@ fn main() -> ! {
                             let cpu_usage = (loop_time_us / total_period_us) * 100.0;
 
                             iprintln!(&mut itm.stim[0], "");
-                            iprintln!(&mut itm.stim[0], "📊 Interrupt Stats (every 1000 loops / ~2.5s):");
+                            iprintln!(
+                                &mut itm.stim[0],
+                                "📊 Interrupt Stats (every 1000 loops / ~2.5s):"
+                            );
                             iprintln!(&mut itm.stim[0], "  Avg Cycles/Loop: {}", avg_cycles);
                             iprintln!(&mut itm.stim[0], "  Loop Time: {:.3}μs", loop_time_us);
                             iprintln!(&mut itm.stim[0], "  Anomalies: {}", anomaly_count);
@@ -192,8 +196,7 @@ fn main() -> ! {
                     }
                 }
                 false // Don't sleep if we processed data
-            }
-            else {
+            } else {
                 //iprintln!(&mut itm.stim[0], "Sleeping until next timer interrupt...");
                 true // Signal to sleep when no data ready
             }
@@ -204,7 +207,6 @@ fn main() -> ! {
             //iprintln!(&mut itm.stim[0], "Waiting for timer interrupt...");
             cortex_m::asm::wfe();
         }
-
     }
 }
 #[allow(non_snake_case)]
@@ -215,7 +217,7 @@ pub extern "C" fn TIM2() {
 
     // Clear flag safely through helper
     //let _ = auxiliary::Tim2Guard::check_and_clear_uif();
-    let _= auxiliary::timer::tim2::Tim2Guard::check_and_clear_uif();
+    let _ = auxiliary::timer::tim2::Tim2Guard::check_and_clear_uif();
 
     interrupt::free(|cs| {
         *NEW_DATA_READY.borrow(cs).borrow_mut() = true;
