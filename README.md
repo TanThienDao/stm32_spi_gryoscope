@@ -148,25 +148,40 @@ stm32_spi_gryoscope/
 ├── .github/
 │   └── workflows/
 │       └── build.yml               # GitHub Actions build workflow
+├── .gitignore                      # Git ignore rules
 ├── src/
 │   └── main.rs                     # Main entry point with interrupt-driven loop
-├── auxiliary/
-│   ├── Cargo.toml                  # Auxiliary crate dependencies
-│   └── src/
-│       ├── lib.rs                  # Hardware initialization (RCC, GPIO, SPI, TIM2, NVIC)
-│       ├── gyro_driver.rs          # I3G4250D gyroscope driver with SPI communication
-│       └── interrupt_handler.rs    # TIM2 ISR and NEW_DATA_READY synchronization
-├── docs/
-│   ├── ...           
-│   └── RTOS/
-│       └── TIMx/
-│           ├── TIM2_Interrupt_Guide.md     # TIM2 configuration guide
-│           ├── ...
-│           └── ...
-├── Cargo.toml                      # Main project manifest
-├── Cargo.lock                      # Dependency lock file
-├── openocd.gdb                     # OpenOCD debug configuration
-└── README.md                       # This file
+├── auxiliary/                      # Support library crate for hardware abstraction
+│   ├── .cargo/
+│   │   └── config.toml             # Auxiliary crate Cargo configuration
+│   ├── Cargo.toml                  # Auxiliary crate manifest and dependencies
+│   ├── src/
+│   │   ├── lib.rs                  # Library root with public module exports
+│   │   ├── gyro_driver.rs          # I3G4250D gyroscope driver with SPI communication
+│   │   ├── interrupt_handler.rs    # TIM2 ISR and NEW_DATA_READY synchronization
+│   │   ├── nvic.rs                 # NVIC interrupt controller management
+│   │   └── timer/
+│   │       ├── mod.rs              # Timer module exports
+│   │       └── tim2.rs             # TIM2 timer configuration and control (prescaler, ARR)
+│   └── tests/
+│       └── integration_tests.rs    # Integration tests for hardware initialization
+├── docs/                           # Comprehensive technical documentation
+│   ├── CPU_Usage_Calculation.md    # CPU usage metrics, DWT cycle counter, formulas
+│   ├── ....
+│   ├── SPI_Full_Duplex_Explained.md # Full-duplex SPI communication protocol
+│   ├── RTOS/
+│   │   └── TIMx/
+│   │       └── TIM2_Interrupt_Guide.md  # Detailed TIM2 configuration and ISR setup
+│   └── Screenshots/                # Hardware configuration and datasheet references
+│       ├── ctrl_reg1_*.png         # STM32F3 control register settings
+│       └── *.jpg                   # Gyroscope datasheet excerpts
+├── Cargo.toml                      # Main project manifest with dependencies
+├── Cargo.lock                      # Locked dependency versions
+├── LICENSE                         # MIT License
+├── openocd.gdb                     # OpenOCD debugger configuration
+├── README.md                       # This file
+├── emf.log, itm.log, *.log        # Debug and instrumentation trace logs
+└── .git/                           # Git repository
 ```
 ***
 ## 🔧 Key Functions and Structs
