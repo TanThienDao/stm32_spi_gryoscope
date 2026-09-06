@@ -3,6 +3,7 @@
 #![no_std]
 
 use auxiliary::*;
+use auxiliary::nvic::NvicGuard;
 use cortex_m_rt::entry;
 use cortex_m::peripheral::DWT;
 use auxiliary::interrupt_handler::NEW_DATA_READY;
@@ -213,7 +214,8 @@ pub extern "C" fn TIM2() {
     use cortex_m::interrupt;
 
     // Clear flag safely through helper
-    let _ = auxiliary::Tim2Guard::check_and_clear_uif();
+    //let _ = auxiliary::Tim2Guard::check_and_clear_uif();
+    let _= auxiliary::timer::tim2::Tim2Guard::check_and_clear_uif();
 
     interrupt::free(|cs| {
         *NEW_DATA_READY.borrow(cs).borrow_mut() = true;
