@@ -6,7 +6,11 @@ use auxiliary::interrupt_handler::NEW_DATA_READY;
 use auxiliary::nvic::NvicGuard;
 use auxiliary::*;
 use cortex_m::peripheral::DWT;
-use cortex_m_rt::entry;
+use cortex_m_rt::{entry, interrupt};
+use cortex_m::interrupt::free;
+//use stm32f3_discovery::stm32f3xx_hal::interrupt;
+
+
 
 // Note: Phase 2 uses timer interrupt flag polling instead of ISR
 // This provides efficient timer-based updates without macro complications
@@ -116,7 +120,7 @@ fn main() -> ! {
     let mut main_loop_start = DWT::cycle_count();
 
     loop {
-        let should_sleep = cortex_m::interrupt::free(|cs| {
+        let should_sleep = free(|cs| {
             let mut ready = NEW_DATA_READY.borrow(cs).borrow_mut();
             if *ready {
                 *ready = false; // Reset flag
@@ -209,7 +213,8 @@ fn main() -> ! {
         }
     }
 }
-#[allow(non_snake_case)]
+//todo NOTE: this interrupt work but it not good practice -> keep it for reference only, since learning. 
+/*#[allow(non_snake_case)]
 #[no_mangle]
 pub extern "C" fn TIM2() {
     use auxiliary::interrupt_handler::NEW_DATA_READY;
@@ -220,6 +225,16 @@ pub extern "C" fn TIM2() {
     let _ = auxiliary::timer::tim2::Tim2Guard::check_and_clear_uif();
 
     interrupt::free(|cs| {
+        *NEW_DATA_READY.borrow(cs).borrow_mut() = true;
+    });
+}
+*/
+
+#[interrupt]
+fn TIM2() {
+    // Clear flag safely through helper
+    let _ = auxiliary::timer::tim2::Tim2Guard::check_and_clear_uif();
+    free(|cs| {
         *NEW_DATA_READY.borrow(cs).borrow_mut() = true;
     });
 }
