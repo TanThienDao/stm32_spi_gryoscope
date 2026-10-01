@@ -15,6 +15,9 @@ pub use stm32f3_discovery::stm32f3xx_hal::{
     delay::Delay,
     interrupt::{self},
     pac::{self, SPI1, TIM2},
+    gpio::{AF5, Alternate, Output, PushPull},
+    gpio::gpioa::{PA5, PA6, PA7},
+    gpio::gpioe::PE3,
     prelude::*,
     spi::{MisoPin, Mode, MosiPin, Phase, Polarity, SckPin, Spi},
     time::rate::Hertz,
@@ -183,4 +186,13 @@ where
         0xD7 => Ok(GyroVariant::L3gd20h),  // L3GD20H is 11010111 is D7h
         other => Ok(GyroVariant::Unknown(other)),
     }
+}
+
+/// Sets tim2
+pub fn init_time2(dp: &mut pac::Peripherals) -> Result<(), &'static str> {
+    // Initialize TIM2 for interrupt-driven updates
+    let tim2_config = timer::TimerConfig::new(100_000, 400);
+    let mut tim2 = timer::tim2::Tim2Guard::new(tim2_config).unwrap();
+    tim2.init(&mut dp.TIM2)?;
+    Ok(())
 }
