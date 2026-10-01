@@ -1,240 +1,392 @@
-//#![deny(unsafe_code)]
 #![no_main]
 #![no_std]
 
-use auxiliary::interrupt_handler::NEW_DATA_READY;
-use auxiliary::nvic::NvicGuard;
-use auxiliary::*;
-use cortex_m::peripheral::DWT;
-use cortex_m_rt::{entry, interrupt};
-use cortex_m::interrupt::free;
-//use stm32f3_discovery::stm32f3xx_hal::interrupt;
+use rtic::app;
+// ===== RTIC APP  =====
 
-
-
-// Note: Phase 2 uses timer interrupt flag polling instead of ISR
-// This provides efficient timer-based updates without macro complications
-
-#[entry]
-fn main() -> ! {
-    let (mut itm, _delay, mut spi, mut cs, mut dwt) = init();
-
-    // Enable DWT cycle counter for measurements
-    // DWT (Data Watchpoint and Trace) is a feature of ARM Cortex-M
-    // processors that provides a cycle counter,
-    // which can be used for profiling and measuring execution time.
-    // Enabling the cycle counter allows you to measure how many clock
-    // cycles have elapsed between two points in your code,
-    // which is useful for performance analysis and debugging.
-    dwt.enable_cycle_counter();
-
-    iprintln!(&mut itm.stim[0], "===============================");
-    iprintln!(&mut itm.stim[0], "I3G4250D Gyroscope");
-    iprintln!(&mut itm.stim[0], "===============================");
-
-    // Step 1: Identify the gyroscope
-    iprintln!(&mut itm.stim[0], "");
-    iprintln!(&mut itm.stim[0], "Step 1: Detecting gyroscope...");
-    let variant = match detect_gyroscope(&mut spi, &mut cs) {
-        Ok(var) => {
-            iprintln!(&mut itm.stim[0], "✓ Found: {:?}", var);
-            var
-        }
-        Err(_) => {
-            iprintln!(&mut itm.stim[0], "✗ Error detecting gyroscope!");
-            loop {}
-        }
-    };
-
-    if variant != GyroVariant::I3g4250d {
-        iprintln!(&mut itm.stim[0], "✗ This requires I3G4250D!");
-        loop {}
+/// Shared resources (protected by RTIC)
+#[app(device = stm32f3_discovery::stm32f3xx_hal::pac, dispatchers = [EXTI0])]
+mod app {
+    use auxiliary::*;
+    // ===== SHARED RESOURCES =====
+    /// Resources shared between tasks (protected by RTIC)
+    #[shared]
+    struct Shared {
+        /// Shared sensor data (x, y, z angular velocities)
+        sensor_data: (f32, f32, f32),
+        /// Flag indicating new sensor data is ready
+        new_data_ready: bool,
+        /// Performane tracking for read_sensor task
+        read_sensor_total_cycles: u32,
+        read_sensor_count: u32,
+        /// Performane tracking for process_data task
+        process_data_total_cycles: u32,
+        process_data_count: u32,
     }
-    // Step 2: initialize custom driver
-    iprintln!(&mut itm.stim[0], "");
-    iprintln!(&mut itm.stim[0], "Step 2: Initializing driver...");
-    let mut gyro = GyroDriver::new(spi, cs);
+    /// Pre-task local resources (not shared)
+    #[local]
+    struct Local {
+        /// Local gyro driver instance
+        gyro: GyroDriver<
+            Spi<
+                SPI1,
+                (
+                    PA5<Alternate<PushPull, 5>>,
+                    PA6<Alternate<PushPull, 5>>,
+                    PA7<Alternate<PushPull, 5>>,
+                ),
+            >,
+            PE3<Output<PushPull>>,
+        >,
+        /// Local ITM instance for debugging
+        itm: ITM,
+        /// Data consistent tracker
+        prev_data: (f32, f32, f32),
+        /// Counter for tracking anomalies
+        counter: u32,
+        anomaly_counter: u32,
+    }
+    #[init]
+    fn init(mut ctx: init::Context) -> (Shared, Local) {
+        use auxiliary::*;
 
-    match gyro.who_am_i() {
-        Ok(id) => {
-            if id == 0xD3 {
-                iprintln!(&mut itm.stim[0], "✓ WHO_AM_I: 0x{:02X}", id);
-            } else {
-                iprintln!(&mut itm.stim[0], "✗ Unexpected ID: 0x{:02X}", id);
+        //Step 0: Enable TIM2 clock in RCC (APB1ENR)
+        ctx.device.RCC.apb1enr.modify(|_, w| w.tim2en().set_bit());
+        //init TIM2 for interrupt-driven updates
+        init_time2(&mut ctx.device).unwrap();
+        //Set up clock
+        let mut dwt = ctx.core.DWT;
+        let mut flash = ctx.device.FLASH.constrain();
+        let mut rcc = ctx.device.RCC.constrain();
+        let clocks = rcc.cfgr.freeze(&mut flash.acr);
+
+        //==============================================================
+        // SPI1 Configuration Start
+        //==============================================================
+
+        let mut gpioa = ctx.device.GPIOA.split(&mut rcc.ahb);
+        let mut gpioe = ctx.device.GPIOE.split(&mut rcc.ahb);
+        // SPI pins (PA5=SCK, PA6=MISO, PA7=MOSI)
+        let sck =
+            gpioa
+                .pa5
+                .into_af5_push_pull(&mut gpioa.moder, &mut gpioa.otyper, &mut gpioa.afrl);
+        let miso =
+            gpioa
+                .pa6
+                .into_af5_push_pull(&mut gpioa.moder, &mut gpioa.otyper, &mut gpioa.afrl);
+        let mosi =
+            gpioa
+                .pa7
+                .into_af5_push_pull(&mut gpioa.moder, &mut gpioa.otyper, &mut gpioa.afrl);
+
+        // PE3 CS pin (in STM32F3, this is the NSS Slave Select pin)
+        let cs = gpioe
+            .pe3
+            .into_push_pull_output(&mut gpioe.moder, &mut gpioe.otyper);
+
+        // SPI mode required by I3G4250D
+        // There are four SPI modes, defined by the combination of
+        // Clock Polarity (CPOL) and Clock Phase (CPHA):
+        //
+        // Condition: CPOL=1, CPHA=1 (Mode 3)
+        // Configuration:
+        //   Clock Polarity = Idle High, Active Low.
+        //   Clock Phase = Capture on Second Transition, trailing edge of the clock pulse.
+        let mode = Mode {
+            polarity: Polarity::IdleHigh, // Clock idle state is high (CPOL=1)
+            phase: Phase::CaptureOnSecondTransition, // Capture on second clock transition (falling edge for CPOL=1)
+        };
+        let spi = Spi::spi1(
+            ctx.device.SPI1,
+            (sck, miso, mosi),
+            mode,
+            Hertz(1_000_000), // 1 MHz Config clock baud rate, can be adjusted based on the gyroscope's datasheet
+            clocks,
+            &mut rcc.apb2,
+        );
+        //==============================================================
+        // SPI1 Configuration End
+        //==============================================================
+
+        let delay = Delay::new(ctx.core.SYST, clocks);
+        let mut itm = ctx.core.ITM;
+
+        iprintln!(&mut itm.stim[0], "===============================");
+        iprintln!(&mut itm.stim[0], "Phase 3: RTIC-based I3G4250D Gyroscope");
+        iprintln!(&mut itm.stim[0], "===============================");
+
+        // Step 1: Detect Gyro driver
+        iprintln!(&mut itm.stim[0], "Step 1: Detect Gyro driver...");
+        let mut gryo = GyroDriver::new(spi, cs);
+        iprintln!(&mut itm.stim[0], "✓ Gyro driver initialized.");
+        match gryo.who_am_i() {
+            Ok(id) => {
+                if id == 0xD3 {
+                    iprintln!(&mut itm.stim[0], "✓ Gyro ID: 0x{:X} (I3G4250D)", id);
+                } else {
+                    iprintln!(&mut itm.stim[0], "✗ Unexpected Gyro ID: 0x{:X}", id);
+                    loop {}
+                }
+            }
+            Err(_) => {
+                iprintln!(&mut itm.stim[0], "✗ Error reading Gyro ID!");
                 loop {}
             }
         }
-        Err(e) => {
-            iprintln!(&mut itm.stim[0], "✗ WHO_AM_I failed: {}", e);
+
+        // Step 2: Initialize Gyro driver
+        iprintln!(&mut itm.stim[0], "Step 2: Init Gyro driver...");
+        // Initialize the gyro
+        if let Err(e) = gryo.init() {
+            iprintln!(&mut itm.stim[0], "✗ Error initializing Gyro: {:?}", e);
             loop {}
         }
+        iprintln!(&mut itm.stim[0], "✓ Gyro driver initialized.");
+
+        // Step 3: Configure Gyro
+        iprintln!(&mut itm.stim[0], "Step 3: Configuring Gyro...");
+        if let Err(e) = gryo.set_data_rate(DataRate::Hz400) {
+            iprintln!(&mut itm.stim[0], "✗ Error setting data rate: {:?}", e);
+            loop {}
+        }
+        if let Err(e) = gryo.set_range(Range::DPS500) {
+            iprintln!(&mut itm.stim[0], "✗ Error setting range: {:?}", e);
+            loop {}
+        }
+        iprintln!(&mut itm.stim[0], "✓ Gyro configured).");
+        iprintln!(&mut itm.stim[0], "✓ Configuration complete:");
+        iprintln!(&mut itm.stim[0], "  - Data Rate: 400 Hz (timer interrupt)");
+        iprintln!(&mut itm.stim[0], "  - Range: 500 °/s");
+        iprintln!(&mut itm.stim[0], "");
+
+        iprintln!(
+            &mut itm.stim[0],
+            "Enabling DWT cycle counter for performance measurement..."
+        );
+        dwt.enable_cycle_counter();
+
+        iprintln!(
+            &mut itm.stim[0],
+            "✓ RTIC system ready. Starting main loop..."
+        );
+        iprintln!(&mut itm.stim[0], "===============================");
+
+        // shared resources initialization
+        let shared = Shared {
+            sensor_data: (0.0, 0.0, 0.0),
+            new_data_ready: false,
+            read_sensor_total_cycles: 0,
+            read_sensor_count: 0,
+            process_data_total_cycles: 0,
+            process_data_count: 0,
+        };
+
+        // Initialize local resources
+        let local = Local {
+            gyro: gryo,
+            itm,
+            prev_data: (0.0, 0.0, 0.0),
+            counter: 0,
+            anomaly_counter: 0,
+        };
+
+        (shared, local)
     }
 
-    // Initialize the gyroscope
-    if let Err(e) = gyro.init() {
-        iprintln!(&mut itm.stim[0], "✗ Initialization error: {}", e);
-        loop {}
-    }
-
-    // Step 3: Configure gyroscope
-    iprintln!(&mut itm.stim[0], "");
-    iprintln!(&mut itm.stim[0], "Step 3: Configuring sensor...");
-
-    if let Err(e) = gyro.set_data_rate(DataRate::Hz400) {
-        iprintln!(&mut itm.stim[0], "✗ DataRate config error: {}", e);
-        loop {}
-    }
-
-    if let Err(e) = gyro.set_range(Range::DPS500) {
-        iprintln!(&mut itm.stim[0], "✗ Range config error: {}", e);
-        loop {}
-    }
-
-    iprintln!(&mut itm.stim[0], "✓ Configuration complete:");
-    iprintln!(&mut itm.stim[0], "  - Data Rate: 400 Hz (timer interrupt)");
-    iprintln!(&mut itm.stim[0], "  - Range: 500 °/s");
-    iprintln!(&mut itm.stim[0], "");
-    iprintln!(
-        &mut itm.stim[0],
-        "Step 4: Starting interrupt-driven mode..."
-    );
-    iprintln!(&mut itm.stim[0], "──────────────────────────────────────");
-    iprintln!(&mut itm.stim[0], "");
-
-    // ===== PHASE 2: MAIN LOOP =====
-
-    //Step 5: Enable TIM2 Interrupt safely
-    let mut nvic_guard = NvicGuard::new();
-    if let Err(e) = nvic_guard.unmask_tim2_safe() {
-        iprintln!(&mut itm.stim[0], "✗ NVIC unmask error: {}", e);
-        loop {}
-    }
-
-    let mut counter = 0u32;
-    let mut prev_reading = (0.0f32, 0.0f32, 0.0f32);
-    let mut anomaly_count = 0u32;
-    const MAX_DELTA: f32 = 100.0;
-
-    let mut total_cycles = 0u64;
-    let mut loop_iterations = 0u32;
-    let mut main_loop_start = DWT::cycle_count();
-
-    loop {
-        let should_sleep = free(|cs| {
-            let mut ready = NEW_DATA_READY.borrow(cs).borrow_mut();
-            if *ready {
-                *ready = false; // Reset flag
-                                // Read sensor data from gyro
-                match gyro.read_angular_velocity() {
-                    Ok((x, y, z)) => {
-                        // Consistency check
-                        let delta_x = (x - prev_reading.0).abs();
-                        let delta_y = (y - prev_reading.1).abs();
-                        let delta_z = (z - prev_reading.2).abs();
-
-                        // Flag if exceeds threshold
-                        if delta_x > MAX_DELTA || delta_y > MAX_DELTA || delta_z > MAX_DELTA {
-                            anomaly_count += 1;
-                            iprintln!(
-                                &mut itm.stim[0],
-                                "⚠️  ANOMALY #{}: Δx={:.2}, Δy={:.2}, Δz={:.2}",
-                                anomaly_count,
-                                delta_x,
-                                delta_y,
-                                delta_z
-                            );
-                        }
-
-                        // Update previous reading
-                        prev_reading = (x, y, z);
-
-                        if counter % 4 == 0 {
-                            iprintln!(
-                                &mut itm.stim[0],
-                                "X: {:7.2}°/s | Y: {:7.2}°/s | Z: {:7.2}°/s",
-                                x,
-                                y,
-                                z
-                            );
-                        }
-                        counter += 1;
-
-                        // Measure loop performance
-                        let now = DWT::cycle_count();
-                        let loop_cycles = now.wrapping_sub(main_loop_start);
-                        total_cycles = total_cycles.wrapping_add(loop_cycles as u64);
-                        loop_iterations += 1;
-                        main_loop_start = now;
-
-                        // Print statistics every 1000 iterations (~2.5s at 400 Hz)
-                        if loop_iterations % 1000 == 0 {
-                            let avg_cycles = (total_cycles / 1000) as u32;
-
-                            // Convert cycles to microseconds (72 MHz = 72 cycles per μs)
-                            let loop_time_us = avg_cycles as f64 / 72.0;
-
-                            // Total measurement period: 1000 iterations at 400 Hz
-                            // = 1000 / 400 Hz = 2.5 seconds = 2,500,000 microseconds
-                            let total_period_us = 2_500_000.0;
-
-                            // CPU Usage = (Time spent executing / Total measurement time) × 100%
-                            let cpu_usage = (loop_time_us / total_period_us) * 100.0;
-
-                            iprintln!(&mut itm.stim[0], "");
-                            iprintln!(
-                                &mut itm.stim[0],
-                                "📊 Interrupt Stats (every 1000 loops / ~2.5s):"
-                            );
-                            iprintln!(&mut itm.stim[0], "  Avg Cycles/Loop: {}", avg_cycles);
-                            iprintln!(&mut itm.stim[0], "  Loop Time: {:.3}μs", loop_time_us);
-                            iprintln!(&mut itm.stim[0], "  Anomalies: {}", anomaly_count);
-                            iprintln!(&mut itm.stim[0], "  CPU Usage: {:.2}%", cpu_usage);
-                            iprintln!(&mut itm.stim[0], "──────────────────────────────────────");
-
-                            total_cycles = 0;
-                        }
-                    }
-                    Err(e) => {
-                        iprintln!(&mut itm.stim[0], "✗ Read error: {}", e);
-                        loop {}
-                    }
-                }
-                false // Don't sleep if we processed data
-            } else {
-                //iprintln!(&mut itm.stim[0], "Sleeping until next timer interrupt...");
-                true // Signal to sleep when no data ready
-            }
-        });
-
-        if should_sleep {
-            // If no data ready, just loop back (low CPU usage when sleeping)
-            //iprintln!(&mut itm.stim[0], "Waiting for timer interrupt...");
-            cortex_m::asm::wfe();
+    // ===== IDLE TASK (LOW PRIORITY) =====
+    /// Idle loop (lowest priority) for processing data
+    /// Spawned process_data task when interrupt fires
+    #[idle(shared = [sensor_data, new_data_ready])]
+    fn idle(cx: idle::Context) -> ! {
+        //Main loop: Process data (lower priority)
+        //sleeps when nothing to do
+        loop {
+            asm::wfi();
         }
     }
-}
-//todo NOTE: this interrupt work but it not good practice -> keep it for reference only, since learning. 
-/*#[allow(non_snake_case)]
-#[no_mangle]
-pub extern "C" fn TIM2() {
-    use auxiliary::interrupt_handler::NEW_DATA_READY;
-    use cortex_m::interrupt;
 
-    // Clear flag safely through helper
-    //let _ = auxiliary::Tim2Guard::check_and_clear_uif();
-    let _ = auxiliary::timer::tim2::Tim2Guard::check_and_clear_uif();
+    // ===== TIM2 Interrupt Hardware Task (HIGH PRIORITY) =====
+    /// TIM2 interrupt handler bound through RTIC.
+    /// High priority: runs as soon as interrupt fires.
+    /// Responsibility: read gyro data sensor only.
+    #[task(binds = TIM2,
+    shared = [sensor_data, new_data_ready, read_sensor_total_cycles, read_sensor_count],
+    local = [gyro])]
+    fn read_sensor(mut cx: read_sensor::Context) {
+        let start = DWT::cycle_count();
+        // Clear the update interrupt flag (UIF) for TIM2 to acknowledge the interrupt
+        let _ = timer::tim2::Tim2Guard::check_and_clear_uif();
+        // Read angular velocity from the gyroscope
+        let gyro = cx.local.gyro;
+        // Update shared resources with new sensor data
+        if let Ok((x, y, z)) = gyro.read_angular_velocity() {
+            // Update shared resources
+            cx.shared.sensor_data.lock(|data| {
+                *data = (x, y, z);
+            });
+            cx.shared.new_data_ready.lock(|ready| {
+                *ready = true;
+            });
 
-    interrupt::free(|cs| {
-        *NEW_DATA_READY.borrow(cs).borrow_mut() = true;
-    });
-}
-*/
+            // Spawn the process_data task to handle the new data
+            process_data::spawn().unwrap();
+        }
 
-#[interrupt]
-fn TIM2() {
-    // Clear flag safely through helper
-    let _ = auxiliary::timer::tim2::Tim2Guard::check_and_clear_uif();
-    free(|cs| {
-        *NEW_DATA_READY.borrow(cs).borrow_mut() = true;
-    });
+        // Measure performance of read_sensor task
+        let end = DWT::cycle_count();
+        let elapsed = end.wrapping_sub(start) as u32;
+        cx.shared.read_sensor_total_cycles.lock(|total| {
+            *total += elapsed;
+        });
+        cx.shared.read_sensor_count.lock(|count| {
+            *count += 1;
+        });
+    }
+
+    ///Main processing loop (lower priority than interrupt)
+    /// Processes the data read from the gyroscope and checks for anomalies.
+    #[task(
+    priority = 1,
+    shared = [sensor_data, new_data_ready, read_sensor_total_cycles, read_sensor_count, process_data_total_cycles, process_data_count],
+    local = [itm, prev_data, counter, anomaly_counter])]
+    async fn process_data(mut cx: process_data::Context) {
+        let start = DWT::cycle_count();
+        // Access shared and local resources
+        let itm = cx.local.itm;
+        let prev_data = cx.local.prev_data;
+        let counter = cx.local.counter;
+        let anomaly_counter = cx.local.anomaly_counter;
+        const MAX_DELTA: f32 = 100.0; // Maximum allowed change in angular velocity
+
+        // Check if new data is ready
+        let has_data = cx.shared.new_data_ready.lock(|ready| {
+            if *ready {
+                *ready = false;
+                true
+            } else {
+                false
+            }
+        });
+        if !has_data {
+            return;
+        }
+
+        // Read the latest sensor data
+        let (x, y, z) = cx.shared.sensor_data.lock(|data| *data);
+
+        // Consistency check: Compare with previous data
+        let delta_x = (x - prev_data.0).abs();
+        let delta_y = (y - prev_data.1).abs();
+        let delta_z = (z - prev_data.2).abs();
+
+        if delta_x > MAX_DELTA || delta_y > MAX_DELTA || delta_z > MAX_DELTA {
+            *anomaly_counter += 1;
+            iprintln!(
+                &mut itm.stim[0],
+                "⚠️  ANOMALY #{}: Δx={:.2}, Δy={:.2}, Δz={:.2}",
+                *anomaly_counter,
+                delta_x,
+                delta_y,
+                delta_z
+            );
+        }
+
+        // Update previous data for the next comparison
+        *prev_data = (x, y, z);
+        // Print every 4th iteration to avoid flooding the ITM
+        if *counter % 4 == 0 {
+            iprintln!(
+                &mut itm.stim[0],
+                "X: {:7.2}°/s | Y: {:7.2}°/s | Z: {:7.2}°/s",
+                x,
+                y,
+                z
+            );
+        }
+        *counter += 1;
+
+        // Measure loop performance
+        let end = DWT::cycle_count();
+        let elapsed = end.wrapping_sub(start) as u32;
+
+        // Update process_data performance metrics
+        cx.shared.process_data_total_cycles.lock(|total| {
+            *total += elapsed as u32;
+        });
+        cx.shared.process_data_count.lock(|count| {
+            *count += 1;
+        });
+
+        // Print statistics every 1000 process_data iterations
+        let should_print = cx
+            .shared
+            .process_data_count
+            .lock(|count| *count % 1000 == 0);
+
+        if should_print {
+            let (process_total, process_count, read_total, read_count) =
+                cx.shared.process_data_total_cycles.lock(|pdt| {
+                    cx.shared.process_data_count.lock(|pdc| {
+                        cx.shared.read_sensor_total_cycles.lock(|rst| {
+                            cx.shared
+                                .read_sensor_count
+                                .lock(|rsc| (*pdt, *pdc, *rst, *rsc))
+                        })
+                    })
+                });
+
+            let avg_process_cycles = (process_total / 1000) as u32;
+            let avg_read_cycles = if read_count > 0 {
+                read_total as f64 / read_count as f64
+            } else {
+                0.0
+            };
+            // Convert cycles to microseconds (72 MHz = 72 cycles per μs)
+            let process_time_us = avg_process_cycles as f64 / 72.0;
+            let read_time_us = avg_read_cycles as f64 / 72.0;
+            let total_time_us = process_time_us + (read_time_us * 400.0); // 400 read_sensor calls per 2.5s
+
+            // Total measurement period: 1000 iterations at 400 Hz
+            // = 1000 / 400 Hz = 2.5 seconds = 2,500,000 microseconds
+            let total_period_us = 2_500_000.0;
+            // CPU Usage = (Time spent executing / Total measurement time) × 100%
+            let cpu_usage = (total_time_us / total_period_us) * 100.0;
+            iprintln!(&mut itm.stim[0], "");
+            iprintln!(
+                &mut itm.stim[0],
+                "📊 System Stats (every 1000 process_data calls / ~2.5s):"
+            );
+            iprintln!(
+                &mut itm.stim[0],
+                "  Process Data Avg: {:.3}μs ({} calls)",
+                process_time_us,
+                process_count
+            );
+            iprintln!(
+                &mut itm.stim[0],
+                "  Read Sensor Avg: {:.3}μs ({} calls)",
+                read_time_us,
+                read_count
+            );
+            iprintln!(&mut itm.stim[0], "  Total Time: {:.3}μs", total_time_us);
+            iprintln!(&mut itm.stim[0], "  Anomalies: {}", *anomaly_counter);
+            iprintln!(&mut itm.stim[0], "  CPU Usage: {:.2}%", cpu_usage);
+            iprintln!(&mut itm.stim[0], "──────────────────────────────────────");
+
+            // Reset counters for next measurement window
+            cx.shared.process_data_total_cycles.lock(|total| {
+                *total = 0;
+            });
+            cx.shared.process_data_count.lock(|count| {
+                *count = 0;
+            });
+            cx.shared.read_sensor_total_cycles.lock(|total| {
+                *total = 0;
+            });
+            cx.shared.read_sensor_count.lock(|count| {
+                *count = 0;
+            });
+        }
+    }
 }

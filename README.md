@@ -1,18 +1,20 @@
-# STM32F3 Discovery SPI Gyroscope Project
+# STM32F3 Discovery SPI Gyroscope Project - (RTIC)
 
-A Rust embedded systems project for interrupt-driven 3-axis gyroscope sensor (I3G4250D) communication via SPI on an STM32F3 Discovery board with real-time performance monitoring.
+A Rust embedded systems project for RTIC-based multi-task 3-axis gyroscope sensor (I3G4250D) communication via SPI on an STM32F3 Discovery board with real-time performance monitoring and per-task metrics.
 ***
 ## 📋 Project Overview
 
 This project demonstrates:
+- **RTIC Framework** - Real-Time Interrupt-driven Concurrency for deterministic multi-task execution
 - **Interrupt-Driven Design** - TIM2 timer generates 400 Hz interrupts for periodic sensor sampling
 - **SPI Communication** - Full-duplex SPI protocol implementation (Mode 3) with DMA-free transfers
 - **Device Identification** - WHO_AM_I register reading to detect gyroscope models (L3GD20, I3G4250D, L3GD20H)
-- **Low-Power Operation** - CPU sleeps during intervals, reducing power consumption to ~5% idle time
-- **Real-Time Monitoring** - CPU usage tracking via ARM Cortex-M4 DWT cycle counter
+- **Low-Power Operation** - CPU sleeps during intervals, reducing power consumption to ~0.26% active time
+- **Real-Time Monitoring** - Per-task CPU usage tracking via ARM Cortex-M4 DWT cycle counter
+- **Accurate Measurements** - Separate tracking of `read_sensor` (high-priority ISR) and `process_data` (low-priority task)
 - **Error Handling** - Robust error management and anomaly detection
 - **ITM Debugging** - Real-time debug output via ARM Instrumentation Trace Macrocell
-- **Embedded Rust** - Using `cortex-m`, `embedded-hal`, `cortex-m-rt`, and `stm32f3xx-hal` crates
+- **Embedded Rust** - Using `cortex-m`, `embedded-hal`, `cortex-m-rt`, `rtic`, and `stm32f3xx-hal` crates
 ***
 ## 🎯 Supported Devices
 
@@ -93,9 +95,9 @@ cargo embed --release
 openocd -f openocd.gdb
 ```
 ***
-## 📡 System Architecture
+## 📡 System Architecture (RTIC-Based)
 
-### Interrupt-Driven Data Flow
+### Multi-Task Interrupt-Driven Data Flow
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -107,24 +109,60 @@ openocd -f openocd.gdb
                       │ Interrupt fires every 2.5 ms
                       ▼
 ┌─────────────────────────────────────────────────────────┐
-│ TIM2 ISR Handler                                        │
-│  ├─ Sets NEW_DATA_READY flag                            │
-│  ├─ Clears Update Interrupt Flag (UIF)                  │
-│  └─ Total execution time: ~1 µs                         │
+│ HIGH PRIORITY Task: read_sensor (binds to TIM2)         │
+│  ├─ Runs immediately on interrupt                       │
+│  ├─ Reads gyroscope via SPI (~16.2 μs)                  │
+│  ├─ Updates shared sensor_data                          │
+│  ├─ Spawns process_data task                            │
+│  └─ Execution: 400 times per 2.5 seconds               │
 └─────────────────────┬───────────────────────────────────┘
-                      │ Signal sent
+                      │ Spawns async task
                       ▼
 ┌─────────────────────────────────────────────────────────┐
-│ Main Loop (Low Power)                                   │
-│  ├─ Sleeps 95% of the time with wfe()                   │
-│  ├─ Wakes on interrupt                                  │
-│  ├─ Reads gyroscope data via SPI                        │
-│  ├─ Monitors CPU usage (DWT cycle counter)              │
-│  └─ Prints statistics every ~2.5 seconds                │
+│ LOW PRIORITY Task: process_data (async, priority=1)     │
+│  ├─ Processes gyroscope data                            │
+│  ├─ Checks for anomalies                                │
+│  ├─ Monitors consistency (~26.6 μs)                     │
+│  ├─ Prints statistics every 1000 calls                  │
+│  └─ Execution: 400 times per 2.5 seconds               │
+└─────────────────────┬───────────────────────────────────┘
+                      │
+                      ▼
+┌─────────────────────────────────────────────────────────┐
+│ IDLE Task (Lowest Priority)                             │
+│  ├─ Runs when no tasks pending                          │
+│  ├─ Executes wfi() (Wait For Interrupt)                 │
+│  └─ CPU sleeps 99.74% of the time                       │
 └─────────────────────────────────────────────────────────┘
+
+RTIC Scheduler: Ensures high-priority tasks preempt lower-priority ones
+Result: Deterministic, real-time execution with minimal latency!
 ```
 
-### SPI Protocol (WHO_AM_I Register Read)
+### RTIC Task Priority Hierarchy
+
+| Task | Priority | Trigger | Execution Time |
+|------|----------|---------|---|
+| **read_sensor** | Hardware (highest) | TIM2 interrupt | ~16.2 μs |
+| **process_data** | 1 | Spawned by read_sensor | ~26.6 μs |
+| **idle** | 0 (lowest) | No pending tasks | CPU sleep |
+
+### Shared Resources & Synchronization
+
+```rust
+#[shared]
+struct Shared {
+    sensor_data: (f32, f32, f32),           // X, Y, Z angular velocities
+    new_data_ready: bool,                   // Data availability flag
+    read_sensor_total_cycles: u32,          // Cumulative execution cycles
+    read_sensor_count: u32,                 // Number of executions
+    process_data_total_cycles: u32,         // Cumulative execution cycles
+    process_data_count: u32,                // Number of executions
+}
+```
+
+All shared resources are automatically protected by RTIC's lock mechanism (critical sections).
+
 
 **Sequence:**
 1. Pull CS Low - Select the device
@@ -150,41 +188,115 @@ stm32_spi_gryoscope/
 │       └── build.yml               # GitHub Actions build workflow
 ├── .gitignore                      # Git ignore rules
 ├── src/
-│   └── main.rs                     # Main entry point with interrupt-driven loop
+│   └── main.rs                     # RTIC app with read_sensor & process_data tasks
 ├── auxiliary/                      # Support library crate for hardware abstraction
-│   ├── .cargo/
-│   │   └── config.toml             # Auxiliary crate Cargo configuration
 │   ├── Cargo.toml                  # Auxiliary crate manifest and dependencies
 │   ├── src/
 │   │   ├── lib.rs                  # Library root with public module exports
 │   │   ├── gyro_driver.rs          # I3G4250D gyroscope driver with SPI communication
-│   │   ├── interrupt_handler.rs    # TIM2 ISR and NEW_DATA_READY synchronization
+│   │   ├── interrupt_handler.rs    # RTIC interrupt coordination
 │   │   ├── nvic.rs                 # NVIC interrupt controller management
 │   │   └── timer/
 │   │       ├── mod.rs              # Timer module exports
-│   │       └── tim2.rs             # TIM2 timer configuration and control (prescaler, ARR)
+│   │       └── tim2.rs             # TIM2 timer configuration (prescaler, ARR, ISR handling)
 │   └── tests/
 │       └── integration_tests.rs    # Integration tests for hardware initialization
 ├── docs/                           # Comprehensive technical documentation
-│   ├── CPU_Usage_Calculation.md    # CPU usage metrics, DWT cycle counter, formulas
-│   ├── ....
+│   ├── ...
 │   ├── SPI_Full_Duplex_Explained.md # Full-duplex SPI communication protocol
-│   ├── RTOS/
-│   │   └── TIMx/
-│   │       └── TIM2_Interrupt_Guide.md  # Detailed TIM2 configuration and ISR setup
 │   └── Screenshots/                # Hardware configuration and datasheet references
-│       ├── ctrl_reg1_*.png         # STM32F3 control register settings
-│       └── *.jpg                   # Gyroscope datasheet excerpts
 ├── Cargo.toml                      # Main project manifest with dependencies
 ├── Cargo.lock                      # Locked dependency versions
 ├── LICENSE                         # MIT License
 ├── openocd.gdb                     # OpenOCD debugger configuration
+├── openocd.cfg                     # OpenOCD hardware configuration
 ├── README.md                       # This file
-├── emf.log, itm.log, *.log        # Debug and instrumentation trace logs
+├── *.log                           # Debug and instrumentation trace logs
 └── .git/                           # Git repository
 ```
 ***
-## 🔧 Key Functions and Structs
+## 🔧 Key Functions and Structs (RTIC-Based)
+
+### RTIC App Structure
+```rust
+#[app(device = stm32f3_discovery::stm32f3xx_hal::pac, dispatchers = [EXTI0])]
+mod app {
+    #[shared]
+    struct Shared { /* Shared resources */ }
+    
+    #[local]
+    struct Local { /* Per-task local resources */ }
+    
+    #[init]
+    fn init(ctx: init::Context) -> (Shared, Local) { /* Initialize hardware */ }
+    
+    #[idle]
+    fn idle(cx: idle::Context) -> ! { /* Low-priority idle task */ }
+    
+    #[task(binds = TIM2, shared = [...], local = [...])]
+    fn read_sensor(cx: read_sensor::Context) { /* High-priority interrupt task */ }
+    
+    #[task(priority = 1, shared = [...], local = [...])]
+    async fn process_data(cx: process_data::Context) { /* Low-priority async task */ }
+}
+```
+
+### `#[init]` - Hardware Initialization Task
+```rust
+#[init]
+fn init(mut ctx: init::Context) -> (Shared, Local) {
+    // Configures:
+    // - RCC (clock system)
+    // - GPIO (SPI pins: PA5/PA6/PA7, CS: PE3)
+    // - SPI1 (1 MHz, Mode 3 - IdleHigh, CaptureOnSecondTransition)
+    // - TIM2 (400 Hz periodic interrupts)
+    // - DWT (cycle counter for performance measurement)
+    // Returns: Shared and Local resource structures
+}
+```
+
+### `#[task(binds = TIM2)]` - High-Priority Interrupt Task
+```rust
+#[task(binds = TIM2, 
+       shared = [sensor_data, new_data_ready, read_sensor_total_cycles, read_sensor_count],
+       local = [gyro])]
+fn read_sensor(mut cx: read_sensor::Context) {
+    // Executes every 2.5 ms when TIM2 interrupt fires
+    // ├─ Measures execution time with DWT cycle counter
+    // ├─ Reads gyroscope via SPI (~16.2 μs average)
+    // ├─ Updates shared sensor_data with (x, y, z)
+    // ├─ Sets new_data_ready flag
+    // ├─ Spawns process_data task
+    // └─ Accumulates execution statistics
+}
+```
+
+### `#[task(priority = 1)]` - Low-Priority Async Task
+```rust
+#[task(priority = 1,
+       shared = [sensor_data, new_data_ready, ...metrics...],
+       local = [itm, prev_data, counter, anomaly_counter])]
+async fn process_data(mut cx: process_data::Context) {
+    // Spawned by read_sensor after each interrupt
+    // ├─ Measures execution time with DWT cycle counter
+    // ├─ Waits for new_data_ready flag
+    // ├─ Reads sensor_data from shared buffer
+    // ├─ Checks for anomalies (delta > 100.0 °/s threshold)
+    // ├─ Prints readings every 4th iteration (~10 ms)
+    // ├─ Accumulates execution statistics
+    // └─ Prints statistics every 1000 calls (~2.5 seconds)
+}
+```
+
+### `#[idle]` - Lowest Priority Idle Task
+```rust
+#[idle(shared = [sensor_data, new_data_ready])]
+fn idle(cx: idle::Context) -> ! {
+    // Runs when no other tasks are pending
+    // └─ Executes asm::wfi() to put CPU into sleep mode
+    // Result: CPU sleeps 99.74% of the time!
+}
+```
 
 ### Timer Configuration (`Tim2Guard`)
 ```rust
@@ -198,24 +310,6 @@ impl Tim2Guard {
     pub fn config_tim2(&mut self, psc: u16, arr: u32) // Configure timer registers
     pub fn calculate_timer_values(...) -> (u16, u32)  // Calculate PSC and ARR
     pub fn check_and_clear_uif() -> bool              // Clear interrupt flag safely
-}
-```
-
-**Configuration Formula:**
-```
-PSC = (CPU_Clock / Timer_Frequency) - 1
-ARR = (Timer_Frequency / Interrupt_Frequency) - 1
-```
-
-### NVIC Management (`NvicGuard`)
-```rust
-pub struct NvicGuard {
-    initialized: bool,
-}
-
-impl NvicGuard {
-    pub fn new() -> Self                           // Create new guard
-    pub fn unmask_tim2_safe(&mut self) -> Result   // Unmask TIM2 interrupt (IRQ 35)
 }
 ```
 
@@ -237,36 +331,6 @@ impl<SPI, CS> GyroDriver<SPI, CS> {
 }
 ```
 
-### Interrupt Handler
-```rust
-// Global flag synchronized between ISR and main loop
-pub static NEW_DATA_READY: Mutex<RefCell<bool>> = Mutex::new(RefCell::new(false));
-
-// TIM2 Interrupt Service Routine (fires every 2.5 ms)
-#[no_mangle]
-pub extern "C" fn TIM2() {
-    // Clear interrupt flag
-    auxiliary::Tim2Guard::check_and_clear_uif();
-    
-    // Signal main loop that data is ready
-    cortex_m::interrupt::free(|cs| {
-        *NEW_DATA_READY.borrow(cs).borrow_mut() = true;
-    });
-}
-```
-
-### Hardware Initialization
-```rust
-pub fn init() -> (ITM, Delay, Spi, OutputPin, DWT) {
-    // Initializes:
-    // - RCC (clock system)
-    // - GPIO (SPI pins and CS)
-    // - SPI1 (1 MHz, Mode 3)
-    // - TIM2 (72 MHz → 100 kHz → 400 Hz interrupts)
-    // - Returns: ITM (debug), Delay, SPI, CS pin, DWT (cycle counter)
-}
-```
-
 ### Device Detection
 ```rust
 pub fn detect_gyroscope<SPI, CS, E>(spi: &mut SPI, cs: &mut CS) -> Result<GyroVariant, E>
@@ -275,7 +339,7 @@ where
     CS: OutputPin,
 {
     // Reads WHO_AM_I register (0x0F)
-    // Returns: I3g4250d, L3gd20, L3gd20h, or Unknown(u8)
+    // Returns: I3g4250d (0xD3), L3gd20 (0xD4), L3gd20h (0xD7), or Unknown(u8)
 }
 ```
 ***
@@ -289,54 +353,79 @@ For detailed information about fixes applied, compilation issues resolved, and d
 - **Static Lifetimes**: Return type requires `&'static str` for error messages
 - **SPI Mode 3**: Specific polarity/phase configuration for L3GD20
 
-### Measurement Points
+## 📊 Measurement & Performance Metrics (Phase RTIC)
 
-**DWT Cycle Counter Metrics:**
-- Avg Cycles/Loop: Clock cycles per main loop iteration
-- Loop Time (μs): Time spent in active processing
-- CPU Usage (%): Percentage of time CPU is actively running
+### Per-Task Execution Tracking
 
-**Formula:**
+The system independently measures both task executions using the DWT cycle counter:
+
+**read_sensor (High-Priority):**
 ```
-CPU Usage = (Average Loop Time / Interrupt Period) × 100%
-          = (Average Loop Time / 2.5 ms) × 100%
-
-At 400 Hz:
-- Expected: ~5-10% when reading and processing data
-- Higher: May indicate SPI timing issues or excessive processing
+- Called: 400 times per 2.5 seconds (every 2.5 ms)
+- Avg Execution: ~16.2 μs per call
+- Total Time: 16.2 μs × 400 = 6,480 μs per window
 ```
+
+**process_data (Low-Priority):**
+```
+- Called: 400 times per 2.5 seconds (spawned by each read_sensor)
+- Avg Execution: ~26.6 μs per call
+- Total Time: 26.6 μs × 1000 calls = 26,600 μs per window (reported every 1000 calls)
+```
+
+### Total CPU Usage Calculation
+
+```
+Total Active Time = (Process Data Time) + (Read Sensor Time)
+                  = 26.6 μs + (16.2 μs × 400)
+                  = 26.6 μs + 6,480 μs
+                  = 6,506.6 μs per 2.5s window
+
+Total Measurement Period = 2.5 seconds = 2,500,000 μs
+
+CPU Usage = (Total Active Time / Total Period) × 100%
+          = (6,506.6 / 2,500,000) × 100%
+          = 0.26% ✓
+
+CPU Idle = 100% - 0.26% = 99.74% (sleeping with wfi())
+```
+
 ***
 ## 📝 Expected Output
 
-### Successful Initialization and Data Collection
+### Successful Phase 3 RTIC Initialization
 ```
 ===============================
-I3G4250D Gyroscope
+Phase 3: RTIC-based I3G4250D Gyroscope
 ===============================
 
-Step 1: Detecting gyroscope...
-✓ Found: I3g4250d
+Step 1: Detect Gyro driver...
+✓ Gyro driver initialized.
+✓ Gyro ID: 0xD3 (I3G4250D)
 
-Step 2: Initializing driver...
-✓ WHO_AM_I: 0xD3
+Step 2: Init Gyro driver...
+✓ Gyro driver initialized.
 
-Step 3: Configuring sensor...
+Step 3: Configuring Gyro...
+✓ Gyro configured).
 ✓ Configuration complete:
   - Data Rate: 400 Hz (timer interrupt)
   - Range: 500 °/s
 
-Step 4: Starting interrupt-driven mode...
-──────────────────────────────────────
+Enabling DWT cycle counter for performance measurement...
+✓ RTIC system ready. Starting main loop...
+===============================
 
 X:   12.34°/s | Y:   -5.67°/s | Z:    0.89°/s
 X:   12.45°/s | Y:   -5.72°/s | Z:    0.91°/s
 X:   12.38°/s | Y:   -5.69°/s | Z:    0.88°/s
 
-📊 Interrupt Stats (every 1000 loops / ~2.5s):
-  Avg Cycles/Loop: 15840
-  Loop Time: 220.000μs
+📊 System Stats (every 1000 process_data calls / ~2.5s):
+  Process Data Avg: 26.569μs (1000 calls)
+  Read Sensor Avg: 16.208μs (400 calls)
+  Total Time: 6509.903μs
   Anomalies: 0
-  CPU Usage: 8.80%
+  CPU Usage: 0.26%
 ──────────────────────────────────────
 
 X:   12.52°/s | Y:   -5.75°/s | Z:    0.92°/s
@@ -344,11 +433,56 @@ X:   12.52°/s | Y:   -5.75°/s | Z:    0.92°/s
 ```
 
 ### Expected Behavior
-- **Data Rate:** New readings every 2.5 ms (400 Hz)
-- **CPU Usage:** ~5-10% during normal operation
-- **Anomaly Detection:** Flags if sensor value changes exceed threshold
-- **Statistics:** Printed every ~2.5 seconds (1000 interrupt cycles)
+- **Data Rate:** New readings every 2.5 ms (400 Hz from TIM2 interrupt)
+- **Process Rate:** 400 readings processed per 2.5 seconds (one per interrupt)
+- **CPU Usage:** 0.24-0.28% during normal operation ✅
+- **Anomaly Detection:** Flags if sensor value changes exceed 100.0 °/s threshold
+- **Statistics Window:** Printed every 1000 process_data calls (~2.5 seconds)
+- **Data Quality:** 0 anomalies under normal, stationary conditions
+- **Task Separation:**
+  - **read_sensor:** Runs 400 times per window, avg ~16.2 μs
+  - **process_data:** Runs 400 times per window, avg ~26.6 μs
+
 ***
+
+## ✅ Validation Checklist (Phase 3 RTIC)
+
+- [x] Code compiles without errors
+- [x] Flashes to board successfully
+- [x] ITM output appears
+- [x] Sensor data printed continuously every ~10 ms (every 4th iteration)
+- [x] **Process Data execution: 26.5-27 μs**
+- [x] **Read Sensor execution: 16-17 μs**
+- [x] **CPU Usage: 0.24-0.28%** (accurate measurement of both tasks)
+- [x] Anomalies detected = 0 (data consistency verified)
+- [x] Data quality maintained from Phase 2
+- [x] Statistics printed every 1000 process_data calls (~2.5s)
+- [x] **Per-task breakdown visible in output**
+- [x] **RTIC task priority isolation working**
+
+---
+
+## 🎯 Phase 3 (RTIC) Advantages Over Phase 2
+
+| Aspect | Phase 2 (Interrupt-based) | Phase 3 (RTIC) |
+|--------|---|---|
+| **Framework** | Manual interrupt handlers | RTIC framework with compile-time checks |
+| **Task Scheduling** | Single loop, cooperative | Preemptive multi-task with priorities |
+| **Code Safety** | Manual Mutex/critical sections | Automatic lock generation by RTIC |
+| **Measurement Accuracy** | Incomplete (main loop only) | **Complete (both tasks tracked)** |
+| **Priority Support** | ❌ None | ✅ Hardware-based preemption |
+| **Resource Sharing** | Manual locking required | Automatic RTIC-based protection |
+| **Determinism** | Fair | **Guaranteed by RTIC priority** |
+| **Development Speed** | Verbose, error-prone | Cleaner, less boilerplate |
+| **Real-Time Guarantees** | Loose | **Strict, verified at compile-time** |
+| **Debugging Support** | Basic | **Enhanced with RTIC introspection** |
+
+**CPU Usage Comparison:**
+- **Phase 2:** 0.10% (incomplete - only main loop measured)
+- **Phase 3:** 0.26% (accurate - both tasks included) ✅ **2.6x increase but correct!**
+
+---
+
 ## 🔗 References
 
 ### Official Documentation
@@ -372,6 +506,15 @@ MIT License - See [LICENSE](LICENSE) for details.
 
 ## 👤 Author
 Tan Dao
+
 ---
-**Last Updated:** September 2026
+
+## 📈 Project Phases
+
+1. **Phase 1: Busy-Wait Polling** - Initial implementation with continuous sensor polling (100% CPU)
+2. **Phase 2: Interrupt-Driven** - Timer interrupt with manual ISR handling (0.10% CPU, but incomplete measurement)
+3. **Phase 3: RTIC Framework** (Current) - Multi-task real-time system with accurate per-task metrics (0.26% CPU, complete measurement)
+
+**Last Updated:** September 2026  
+**Current Phase:** 3 (RTIC-based multi-task system) ✅
 

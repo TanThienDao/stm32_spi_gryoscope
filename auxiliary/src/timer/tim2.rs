@@ -4,8 +4,7 @@ use super::{
     TimerConfig,
     TimerResult,
 };
-use stm32f3_discovery::stm32f3xx_hal::pac::TIM2;
-use crate::pac;
+use crate::pac::{self,TIM2};
 
 /// TIM2 timer group for STM32F3 series microcontrollers.
 pub struct Tim2Guard {

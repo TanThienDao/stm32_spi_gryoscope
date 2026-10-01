@@ -2,8 +2,7 @@
 //! 
 //! Ensure safe interrupt unmasking
 
-pub use cortex_m::peripheral::NVIC;
-pub use crate::interrupt;
+pub use crate::{NVIC,interrupt};
 
 #[derive(Debug)]
 pub struct NvicGuard{

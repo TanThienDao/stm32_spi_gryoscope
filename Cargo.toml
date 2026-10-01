@@ -6,5 +6,10 @@ authors = ["Tan Dao"]
 
 [dependencies]
 auxiliary = { path = "auxiliary" }
-cortex-m-rt = "0.6.15"
 stm32f3-discovery = "0.7.2"
+rtic = {version= "2.3.1", features = ["thumbv7-backend"] }
+[profile.release]
+opt-level = 3
+
+[profile.dev]
+opt-level = 1
