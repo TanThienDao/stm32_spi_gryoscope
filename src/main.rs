@@ -9,8 +9,8 @@ use rtic::app;
 /// Shared resources (protected by RTIC)
 #[app(device = stm32f3_discovery::stm32f3xx_hal::pac, dispatchers = [EXTI0])]
 mod app {
-    use crate::{log_info, log_init, log_stats};
     use crate::log_warn;
+    use crate::{log_debug, log_info, log_init, log_stats};
     use auxiliary::*;
     use rtic::Mutex;
     // ===== SHARED RESOURCES =====
@@ -19,8 +19,6 @@ mod app {
     struct Shared {
         /// ITM for logging (protected by RTIC)
         itm: ITM,
-        /// Current task name for logging context
-        current_task: &'static str,
         /// Shared sensor data (x, y, z angular velocities)
         sensor_data: (f32, f32, f32),
         /// Flag indicating new sensor data is ready
@@ -118,9 +116,15 @@ mod app {
 
         let delay = Delay::new(ctx.core.SYST, clocks);
         let mut itm = ctx.core.ITM;
-        log_init!(itm, "==============================================================");
+        log_init!(
+            itm,
+            "=============================================================="
+        );
         log_init!(itm, "Phase 3: RTIC-based I3G4250D Gyroscope");
-        log_init!(itm, "==============================================================");
+        log_init!(
+            itm,
+            "=============================================================="
+        );
 
         // Step 1: Detect Gyro driver
         log_init!(itm, "Step 1: Detect Gyro driver...");
@@ -173,7 +177,10 @@ mod app {
         dwt.enable_cycle_counter();
 
         log_init!(itm, "✓ RTIC system ready. Starting main loop...");
-        log_init!(itm, "==============================================================");
+        log_init!(
+            itm,
+            "=============================================================="
+        );
         // shared resources initialization
         let shared = Shared {
             sensor_data: (0.0, 0.0, 0.0),
@@ -182,7 +189,6 @@ mod app {
             read_sensor_count: 0,
             process_data_total_cycles: 0,
             process_data_count: 0,
-            current_task: "Init",
             itm,
         };
 
@@ -204,8 +210,8 @@ mod app {
     fn idle(mut cx: idle::Context) -> ! {
         //Main loop: Process data (lower priority)
         //sleeps when nothing to do
+        log_info!(cx, "Idle", "Waiting for new data...");
         loop {
-            log_info!(cx, "Idle", "Waiting for new data...");
             asm::wfi();
         }
     }
@@ -218,7 +224,6 @@ mod app {
     shared = [sensor_data, new_data_ready, read_sensor_total_cycles, read_sensor_count,itm],
     local = [gyro])]
     fn read_sensor(mut cx: read_sensor::Context) {
-        log_info!(cx, "ReadSensor", "TIM2 interrupt fired.");
         let start = DWT::cycle_count();
         // Clear the update interrupt flag (UIF) for TIM2 to acknowledge the interrupt
         let _ = timer::tim2::Tim2Guard::check_and_clear_uif();
@@ -259,7 +264,6 @@ mod app {
     itm],
     local = [ prev_data, counter, anomaly_counter])]
     async fn process_data(mut cx: process_data::Context) {
-        log_info!(cx, "ProcessData", "Processing data...");
         let start = DWT::cycle_count();
         // Access shared and local resources
         let prev_data = cx.local.prev_data;
@@ -364,7 +368,11 @@ mod app {
             let cpu_usage = (total_time_us / total_period_us) * 100.0;
 
             log_stats!(cx, "ProcessData", "");
-            log_stats!(cx, "ProcessData", "────────────────────────────────────────────────────────");
+            log_stats!(
+                cx,
+                "ProcessData",
+                "────────────────────────────────────────────────────────"
+            );
             log_stats!(
                 cx,
                 "ProcessData",
@@ -387,7 +395,11 @@ mod app {
             log_stats!(cx, "ProcessData", "  Total Time: {:.3}μs", total_time_us);
             log_stats!(cx, "ProcessData", "  Anomalies: {}", *anomaly_counter);
             log_stats!(cx, "ProcessData", "  CPU Usage: {:.2}%", cpu_usage);
-            log_stats!(cx, "ProcessData", "────────────────────────────────────────────────────────");
+            log_stats!(
+                cx,
+                "ProcessData",
+                "────────────────────────────────────────────────────────"
+            );
             log_stats!(cx, "ProcessData", "");
 
             // Reset counters for next measurement window

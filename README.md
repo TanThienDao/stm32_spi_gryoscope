@@ -435,14 +435,14 @@ The project uses a comprehensive **task-aware logging module** (`src/logging.rs`
 
 ### Logging Features
 
-| Feature | Description |
-|---------|---|
-| **Task-Aware Colors** | Automatically assigns colors based on task (Init=Cyan, ReadSensor=Green, ProcessData=Blue, Idle=Orange) |
-| **Real-Time Timestamps** | Microsecond-precision using DWT cycle counter: `[HH:MM:SS.mmm.μμμ]` |
-| **Multiple Log Levels** | INFO, DEBUG, WARN, ERROR, STATS with distinct formatting |
-| **Thread-Safe** | All logging protected by RTIC Mutex around ITM |
-| **ITM Integration** | Output via SWO pin (stimulus port 0) |
-| **ANSI Color Codes** | 256-color terminal support for rich output |
+| Feature | Description                                                                                                  |
+|---------|--------------------------------------------------------------------------------------------------------------|
+| **Task-Aware Colors** | Automatically assigns colors based on task (Init=Cyan, ReadSensor=Green, ProcessData=Blue, Idle=HoneyYellow) |
+| **Real-Time Timestamps** | Microsecond-precision using DWT cycle counter: `[HH:MM:SS.mmm.μμμ]`                                          |
+| **Multiple Log Levels** | INFO, DEBUG, WARN, ERROR, STATS with distinct formatting                                                     |
+| **Thread-Safe** | All logging protected by RTIC Mutex around ITM                                                               |
+| **ITM Integration** | Output via SWO pin (stimulus port 0)                                                                         |
+| **ANSI Color Codes** | 256-color terminal support for rich output                                                                   |
 
 ### Available Logging Macros
 

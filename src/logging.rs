@@ -1,5 +1,5 @@
-//! Logging module for the application. and task-aware formatting
-//! All logging operations are protected by RTIC;s Mutex for thread safety.
+//! Logging module for the application with task-aware formatting.
+//! All logging operations are protected by RTIC's Mutex for thread safety.
 
 use cortex_m::peripheral::DWT;
 
@@ -72,27 +72,27 @@ impl LogColor {
     }
 }
 /// Helper function to format timestamp
-pub fn format_timestamp() -> (u8, u8, u8, u16, u16) {
+pub fn format_timestamp() -> (u64, u64, u64, u64, u64) {
     let cycles = DWT::cycle_count();
     let total_seconds = cycles / 72_000_000;
     let millis = (cycles / 72_000) % 1000;
-    let micros = (cycles / 72) % 1000;
-    let hours = (total_seconds / 3600) as u8;
-    let minutes = ((total_seconds % 3600) / 60) as u8;
-    let seconds = (total_seconds % 60) as u8;
+    let micros = (cycles / 72_000) % 72;
 
-    (hours, minutes, seconds, millis as u16, micros as u16)
+    let hours = (total_seconds / 3600) as u64;
+    let minutes = ((total_seconds % 3600) / 60) as u64;
+    let seconds = (total_seconds % 60) as u64;
+
+    (hours, minutes, seconds, millis as u64, micros as u64)
 }
-
 
 /// Helper to print padded task name
 pub fn get_padded_task(task: &str) -> &'static str {
     match task {
         "Init" => "Init        ",        // 12 chars total
-        "ReadSensor" => "ReadSensor  ",   // 12 chars total
-        "ProcessData" => "ProcessData ",   // 12 chars total
+        "ReadSensor" => "ReadSensor  ",  // 12 chars total
+        "ProcessData" => "ProcessData ", // 12 chars total
         "Idle" => "Idle        ",        // 12 chars total
-        _ => "Unknown     ",            // 12 chars total
+        _ => "Unknown     ",             // 12 chars total
     }
 }
 
@@ -117,34 +117,13 @@ macro_rules! log_info {
     };
 }
 
-/// Custom color log - allows specifying explicit color
-#[macro_export]
-macro_rules! log_custom {
-    ($cx:expr,$task:expr, $color:expr, $($arg:tt)*) => {
-        {
-            let (h, m, s, ms, us) = $crate::logging::format_timestamp();
-            let color = $crate::logging::LogColor::get_from_task($task);
-            let padded_task = $crate::logging::get_padded_task($task);
-            $cx.shared.itm.lock(|itm| {
-                iprintln!(
-                    &mut itm.stim[0],
-                    "{}[{:02}:{:02}:{:02}.{:03}.{:03}] - [{}] [CUSTOM] {}{}",
-                    $color.to_ansi_code(), h, m, s, ms, us, padded_task,
-                    format_args!($($arg)*),
-                    $crate::logging::LogColor::reset()
-                );
-            });
-        }
-    };
-}
-
 /// Debug log with dim color (for verbose output)
 #[macro_export]
 macro_rules! log_debug {
     ($cx:expr,$task:expr, $($arg:tt)*) => {
         {
             let (h, m, s, ms, us) = $crate::logging::format_timestamp();
-            let color = $crate::logging::LogColor::get_from_task($task);
+            let color = $crate::logging::LogColor::get_from_log_level("DEBUG");
             let padded_task = $crate::logging::get_padded_task($task);
 
             $cx.shared.itm.lock(|itm| {
@@ -165,7 +144,7 @@ macro_rules! log_warn {
     ($cx:expr,$task:expr, $($arg:tt)*) => {
         {
             let (h, m, s, ms, us) = $crate::logging::format_timestamp();
-            let color = $crate::logging::LogColor::get_from_task($task);
+            let color = $crate::logging::LogColor::get_from_log_level("WARN");
             let padded_task = $crate::logging::get_padded_task($task);
 
             $cx.shared.itm.lock(|itm| {
@@ -186,7 +165,7 @@ macro_rules! log_error {
     ($cx:expr,$task:expr, $($arg:tt)*) => {
         {
             let (h, m, s, ms, us) = $crate::logging::format_timestamp();
-            let color = $crate::logging::LogColor::get_from_task($task);
+            let color = $crate::logging::LogColor::get_from_log_level("ERROR");
             let padded_task = $crate::logging::get_padded_task($task);
 
             $cx.shared.itm.lock(|itm| {
@@ -207,7 +186,7 @@ macro_rules! log_stats {
     ($cx:expr, $task:expr, $($arg:tt)*) => {
         {
             let (h, m, s, ms, us) = $crate::logging::format_timestamp();
-            let color = $crate::logging::LogColor::Magenta;
+            let color = $crate::logging::LogColor::get_from_log_level("STATS");
             let padded_task = $crate::logging::get_padded_task($task);
 
             $cx.shared.itm.lock(|itm| {
@@ -229,7 +208,7 @@ macro_rules! log_init {
     ($itm:expr, $($arg:tt)*) => {
         {
             let (h, m, s, ms, us) = $crate::logging::format_timestamp();
-            let color = $crate::logging::LogColor::get_from_task("Init");
+            let color = $crate::logging::LogColor::get_from_log_level("INFO");
             let padded_task = $crate::logging::get_padded_task("Init");
             iprintln!(
                 &mut $itm.stim[0],
