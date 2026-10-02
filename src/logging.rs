@@ -60,7 +60,7 @@ impl LogColor {
             _ => LogColor::None, // Default color for unknown tasks
         }
     }
-    pub fn from_log_level(level: &str) -> LogColor {
+    pub fn get_from_log_level(level: &str) -> LogColor {
         match level {
             "INFO" => LogColor::Blue,
             "DEBUG" => LogColor::Orange,
