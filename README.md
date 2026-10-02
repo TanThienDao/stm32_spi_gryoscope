@@ -313,6 +313,43 @@ impl Tim2Guard {
 }
 ```
 
+### Logging Module (`logging.rs`)
+```rust
+pub enum LogColor {
+    Cyan,           // Init/Setup
+    CHARTREUSE,     // ReadSensor (data acquisition)
+    SKY,            // ProcessData (processing)
+    Honey,          // Errors/Anomalies
+    Magenta,        // Stats/Performance
+    Orange,         // Debugging
+    Blue,           // Info
+    Yellow,         // Warnings
+    Red,            // Error
+    None,           // Default
+}
+
+// Logging macros:
+log_init!(itm, "message")                    // Initialization logs (init task only)
+log_info!(cx, "TaskName", "message")         // Info level with task color
+log_debug!(cx, "TaskName", "message")        // Debug level output
+log_warn!(cx, "TaskName", "message")         // Warning with yellow color
+log_error!(cx, "TaskName", "message")        // Error with red color
+log_stats!(cx, "TaskName", "message")        // Statistics with magenta color
+log_custom!(cx, "TaskName", color, "message") // Custom color logging
+
+pub fn format_timestamp() -> (u8, u8, u8, u16, u16)  // Returns (h, m, s, ms, us)
+```
+
+**Features:**
+- **Task-Aware Colors:** Automatically colors logs based on task name (Init, ReadSensor, ProcessData, Idle)
+- **Real-Time Timestamps:** Uses DWT cycle counter for microsecond-precision timing
+- **ANSI Color Codes:** Terminal output with 256-color support
+- **Thread-Safe:** All logging protected by RTIC's Mutex around ITM
+- **Multiple Log Levels:** INFO, DEBUG, WARN, ERROR, STATS with distinct formatting
+- **ITM Integration:** All output via ARM Instrumentation Trace Macrocell (SWO pin)
+
+**Timestamp Format:** `[HH:MM:SS.mmm.μμμ]` (Hours:Minutes:Seconds.Milliseconds.Microseconds)
+
 ### Gyroscope Driver (`GyroDriver`)
 ```rust
 pub struct GyroDriver<SPI, CS> {
@@ -391,6 +428,121 @@ CPU Idle = 100% - 0.26% = 99.74% (sleeping with wfi())
 ```
 
 ***
+## 📝 Logging System
+
+### Overview
+The project uses a comprehensive **task-aware logging module** (`src/logging.rs`) that provides real-time, color-coded debug output via ARM Instrumentation Trace Macrocell (ITM) on the SWO pin.
+
+### Logging Features
+
+| Feature | Description                                                                                                  |
+|---------|--------------------------------------------------------------------------------------------------------------|
+| **Task-Aware Colors** | Automatically assigns colors based on task (Init=Cyan, ReadSensor=Green, ProcessData=Blue, Idle=HoneyYellow) |
+| **Real-Time Timestamps** | Microsecond-precision using DWT cycle counter: `[HH:MM:SS.mmm.μμμ]`                                          |
+| **Multiple Log Levels** | INFO, DEBUG, WARN, ERROR, STATS with distinct formatting                                                     |
+| **Thread-Safe** | All logging protected by RTIC Mutex around ITM                                                               |
+| **ITM Integration** | Output via SWO pin (stimulus port 0)                                                                         |
+| **ANSI Color Codes** | 256-color terminal support for rich output                                                                   |
+
+### Available Logging Macros
+
+```rust
+// ========== Initialization Task Only ==========
+log_init!(itm, "Gyro initialized successfully");
+// Output: [00:00:00.001.234] - [Init        ] [Info ] Gyro initialized successfully
+
+// ========== Regular Tasks (with context) ==========
+log_info!(cx, "ReadSensor", "Reading gyro data...");
+// Output: [00:00:00.002.567] - [ReadSensor  ] [INFO ] Reading gyro data...
+
+log_debug!(cx, "ProcessData", "Delta X: {:.2}", delta_x);
+// Output: [00:00:00.003.890] - [ProcessData ] [DEBUG] Delta X: 5.67
+
+log_warn!(cx, "ProcessData", "⚠️  ANOMALY #{}: Δx={:.2}", count, delta_x);
+// Output: [00:00:00.004.123] - [ProcessData ] [WARN ] ⚠️  ANOMALY #1: Δx=150.45
+
+log_error!(cx, "ReadSensor", "SPI communication failed!");
+// Output: [00:00:00.005.456] - [ReadSensor  ] [ERROR] SPI communication failed!
+
+log_stats!(cx, "ProcessData", "CPU Usage: {:.2}%", usage);
+// Output: [00:00:00.006.789] - [ProcessData ] [Stats] CPU Usage: 0.26%
+
+log_custom!(cx, "Init", LogColor::Magenta, "Custom message");
+// Output: [00:00:00.007.012] - [Init        ] [CUSTOM] Custom message
+```
+
+### Color Mapping
+
+| Task | Color | ANSI Code | Use Case |
+|------|-------|-----------|----------|
+| **Init** | Cyan | `\x1b[36m` | Initialization and setup messages |
+| **ReadSensor** | Chartreuse (Bright Green) | `\x1b[32;1m` | Sensor data acquisition |
+| **ProcessData** | Sky (Bright Blue) | `\x1b[34;1m` | Data processing and analysis |
+| **Idle** | Honey (Bright Yellow) | `\x1b[33;1m` | Idle task messages |
+| **DEBUG** | Orange | `\x1b[38;5;208m` | Detailed debug information |
+| **INFO** | Blue | `\x1b[34m` | General information |
+| **WARN** | Yellow | `\x1b[33m` | Warnings and anomalies |
+| **ERROR** | Red | `\x1b[31m` | Errors and failures |
+| **STATS** | Magenta | `\x1b[35m` | Performance statistics |
+
+### Timestamp Format
+The `format_timestamp()` function converts DWT cycle counts to human-readable format:
+
+```rust
+// CPU Clock: 72 MHz
+// Calculation:
+let cycles = DWT::cycle_count();           // e.g., 123,456,789 cycles
+let total_seconds = cycles / 72_000_000;   // Convert to seconds (1.714s)
+let millis = (cycles / 72_000) % 1000;     // Extract milliseconds (714 ms)
+let micros = (cycles / 72) % 1000;         // Extract microseconds (123 μs)
+// Result: [00:00:01.714.123] (1 second, 714 milliseconds, 123 microseconds)
+```
+
+### ITM Configuration
+Output is configured in `openocd.gdb`:
+```
+monitor tpiu config internal itm.log uart off 8000000
+monitor itm port 0 on
+```
+
+This routes all `iprintln!` output to stimulus port 0 and saves to `itm.log`.
+
+### Usage Examples
+
+**In init task:**
+```rust
+log_init!(itm, "Step 1: Initializing SPI...");
+log_init!(itm, "✓ SPI initialized at 1 MHz");
+```
+
+**In interrupt task:**
+```rust
+#[task(binds = TIM2, shared = [itm], local = [gyro])]
+fn read_sensor(mut cx: read_sensor::Context) {
+    log_info!(cx, "ReadSensor", "TIM2 interrupt fired");
+    if let Ok((x, y, z)) = cx.local.gyro.read_angular_velocity() {
+        log_debug!(cx, "ReadSensor", "X: {:.2}°/s", x);
+    } else {
+        log_error!(cx, "ReadSensor", "Failed to read gyro");
+    }
+}
+```
+
+**In async task:**
+```rust
+#[task(priority = 1, shared = [itm])]
+async fn process_data(mut cx: process_data::Context) {
+    if anomaly_detected {
+        log_warn!(cx, "ProcessData", "⚠️  Anomaly detected: {}", description);
+    }
+    
+    if iteration % 1000 == 0 {
+        log_stats!(cx, "ProcessData", "CPU Usage: {:.2}%", cpu_usage);
+    }
+}
+```
+
+***
 ## 📝 Expected Output
 
 ### Successful Phase 3 RTIC Initialization
@@ -444,23 +596,6 @@ X:   12.52°/s | Y:   -5.75°/s | Z:    0.92°/s
   - **process_data:** Runs 400 times per window, avg ~26.6 μs
 
 ***
-
-## ✅ Validation Checklist (Phase 3 RTIC)
-
-- [x] Code compiles without errors
-- [x] Flashes to board successfully
-- [x] ITM output appears
-- [x] Sensor data printed continuously every ~10 ms (every 4th iteration)
-- [x] **Process Data execution: 26.5-27 μs**
-- [x] **Read Sensor execution: 16-17 μs**
-- [x] **CPU Usage: 0.24-0.28%** (accurate measurement of both tasks)
-- [x] Anomalies detected = 0 (data consistency verified)
-- [x] Data quality maintained from Phase 2
-- [x] Statistics printed every 1000 process_data calls (~2.5s)
-- [x] **Per-task breakdown visible in output**
-- [x] **RTIC task priority isolation working**
-
----
 
 ## 🎯 Phase 3 (RTIC) Advantages Over Phase 2
 

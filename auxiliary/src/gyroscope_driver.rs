@@ -236,7 +236,7 @@ where
     ///
     /// # Returns
     /// Ok(()) or error
-    pub fn init(&mut self) -> Result<(), &'static str> {
+    pub fn  init(&mut self) -> Result<(), &'static str> {
         // CTRL_REG1: Power on (PD=1) + all axes enabled (Xen=Yen=Zen=1)
         // DR=400Hz (bits 7-6 = 10), BW bits 5-4 = 11
         // 400 Hz(ODR), Cutoff 110, all axes, normal mode 0b10111111
