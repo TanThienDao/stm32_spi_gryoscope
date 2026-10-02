@@ -1,17 +1,26 @@
 #![no_main]
 #![no_std]
 
+mod logging;
+
 use rtic::app;
 // ===== RTIC APP  =====
 
 /// Shared resources (protected by RTIC)
 #[app(device = stm32f3_discovery::stm32f3xx_hal::pac, dispatchers = [EXTI0])]
 mod app {
+    use crate::{log_info, log_init, log_stats};
+    use crate::log_warn;
     use auxiliary::*;
+    use rtic::Mutex;
     // ===== SHARED RESOURCES =====
     /// Resources shared between tasks (protected by RTIC)
     #[shared]
     struct Shared {
+        /// ITM for logging (protected by RTIC)
+        itm: ITM,
+        /// Current task name for logging context
+        current_task: &'static str,
         /// Shared sensor data (x, y, z angular velocities)
         sensor_data: (f32, f32, f32),
         /// Flag indicating new sensor data is ready
@@ -38,22 +47,20 @@ mod app {
             >,
             PE3<Output<PushPull>>,
         >,
-        /// Local ITM instance for debugging
-        itm: ITM,
         /// Data consistent tracker
         prev_data: (f32, f32, f32),
         /// Counter for tracking anomalies
         counter: u32,
         anomaly_counter: u32,
     }
+    // ===== RTIC APP =====
     #[init]
     fn init(mut ctx: init::Context) -> (Shared, Local) {
-        use auxiliary::*;
-
         //Step 0: Enable TIM2 clock in RCC (APB1ENR)
         ctx.device.RCC.apb1enr.modify(|_, w| w.tim2en().set_bit());
         //init TIM2 for interrupt-driven updates
         init_time2(&mut ctx.device).unwrap();
+
         //Set up clock
         let mut dwt = ctx.core.DWT;
         let mut flash = ctx.device.FLASH.constrain();
@@ -111,67 +118,62 @@ mod app {
 
         let delay = Delay::new(ctx.core.SYST, clocks);
         let mut itm = ctx.core.ITM;
-
-        iprintln!(&mut itm.stim[0], "===============================");
-        iprintln!(&mut itm.stim[0], "Phase 3: RTIC-based I3G4250D Gyroscope");
-        iprintln!(&mut itm.stim[0], "===============================");
+        log_init!(itm, "==============================================================");
+        log_init!(itm, "Phase 3: RTIC-based I3G4250D Gyroscope");
+        log_init!(itm, "==============================================================");
 
         // Step 1: Detect Gyro driver
-        iprintln!(&mut itm.stim[0], "Step 1: Detect Gyro driver...");
+        log_init!(itm, "Step 1: Detect Gyro driver...");
         let mut gryo = GyroDriver::new(spi, cs);
-        iprintln!(&mut itm.stim[0], "✓ Gyro driver initialized.");
+        log_init!(itm, "✓ Gyro driver initialized.");
         match gryo.who_am_i() {
             Ok(id) => {
                 if id == 0xD3 {
-                    iprintln!(&mut itm.stim[0], "✓ Gyro ID: 0x{:X} (I3G4250D)", id);
+                    log_init!(itm, "✓ Gyro ID: 0x{:X} (I3G4250D)", id);
                 } else {
-                    iprintln!(&mut itm.stim[0], "✗ Unexpected Gyro ID: 0x{:X}", id);
+                    log_init!(itm, "✗ Unexpected Gyro ID: 0x{:X}", id);
                     loop {}
                 }
             }
             Err(_) => {
-                iprintln!(&mut itm.stim[0], "✗ Error reading Gyro ID!");
+                log_init!(itm, "✗ Error reading Gyro ID!");
                 loop {}
             }
         }
 
         // Step 2: Initialize Gyro driver
-        iprintln!(&mut itm.stim[0], "Step 2: Init Gyro driver...");
+        log_init!(itm, "Step 2: Init Gyro driver...");
         // Initialize the gyro
         if let Err(e) = gryo.init() {
-            iprintln!(&mut itm.stim[0], "✗ Error initializing Gyro: {:?}", e);
+            log_init!(itm, "✗ Error initializing Gyro: {:?}", e);
             loop {}
         }
-        iprintln!(&mut itm.stim[0], "✓ Gyro driver initialized.");
+        log_init!(itm, "✓ Gyro driver initialized.");
 
         // Step 3: Configure Gyro
-        iprintln!(&mut itm.stim[0], "Step 3: Configuring Gyro...");
+        log_init!(itm, "Step 3: Configuring Gyro...");
         if let Err(e) = gryo.set_data_rate(DataRate::Hz400) {
-            iprintln!(&mut itm.stim[0], "✗ Error setting data rate: {:?}", e);
+            log_init!(itm, "✗ Error setting data rate: {:?}", e);
             loop {}
         }
         if let Err(e) = gryo.set_range(Range::DPS500) {
-            iprintln!(&mut itm.stim[0], "✗ Error setting range: {:?}", e);
+            log_init!(itm, "✗ Error setting range: {:?}", e);
             loop {}
         }
-        iprintln!(&mut itm.stim[0], "✓ Gyro configured).");
-        iprintln!(&mut itm.stim[0], "✓ Configuration complete:");
-        iprintln!(&mut itm.stim[0], "  - Data Rate: 400 Hz (timer interrupt)");
-        iprintln!(&mut itm.stim[0], "  - Range: 500 °/s");
-        iprintln!(&mut itm.stim[0], "");
+        log_init!(itm, "✓ Gyro configured).");
+        log_init!(itm, "✓ Configuration complete:");
+        log_init!(itm, "  - Data Rate: 400 Hz (timer interrupt)");
+        log_init!(itm, "  - Range: 500 °/s");
+        log_init!(itm, "");
 
-        iprintln!(
-            &mut itm.stim[0],
+        log_init!(
+            itm,
             "Enabling DWT cycle counter for performance measurement..."
         );
         dwt.enable_cycle_counter();
 
-        iprintln!(
-            &mut itm.stim[0],
-            "✓ RTIC system ready. Starting main loop..."
-        );
-        iprintln!(&mut itm.stim[0], "===============================");
-
+        log_init!(itm, "✓ RTIC system ready. Starting main loop...");
+        log_init!(itm, "==============================================================");
         // shared resources initialization
         let shared = Shared {
             sensor_data: (0.0, 0.0, 0.0),
@@ -180,12 +182,13 @@ mod app {
             read_sensor_count: 0,
             process_data_total_cycles: 0,
             process_data_count: 0,
+            current_task: "Init",
+            itm,
         };
 
         // Initialize local resources
         let local = Local {
             gyro: gryo,
-            itm,
             prev_data: (0.0, 0.0, 0.0),
             counter: 0,
             anomaly_counter: 0,
@@ -197,11 +200,12 @@ mod app {
     // ===== IDLE TASK (LOW PRIORITY) =====
     /// Idle loop (lowest priority) for processing data
     /// Spawned process_data task when interrupt fires
-    #[idle(shared = [sensor_data, new_data_ready])]
-    fn idle(cx: idle::Context) -> ! {
+    #[idle(shared = [itm])]
+    fn idle(mut cx: idle::Context) -> ! {
         //Main loop: Process data (lower priority)
         //sleeps when nothing to do
         loop {
+            log_info!(cx, "Idle", "Waiting for new data...");
             asm::wfi();
         }
     }
@@ -211,9 +215,10 @@ mod app {
     /// High priority: runs as soon as interrupt fires.
     /// Responsibility: read gyro data sensor only.
     #[task(binds = TIM2,
-    shared = [sensor_data, new_data_ready, read_sensor_total_cycles, read_sensor_count],
+    shared = [sensor_data, new_data_ready, read_sensor_total_cycles, read_sensor_count,itm],
     local = [gyro])]
     fn read_sensor(mut cx: read_sensor::Context) {
+        log_info!(cx, "ReadSensor", "TIM2 interrupt fired.");
         let start = DWT::cycle_count();
         // Clear the update interrupt flag (UIF) for TIM2 to acknowledge the interrupt
         let _ = timer::tim2::Tim2Guard::check_and_clear_uif();
@@ -248,12 +253,15 @@ mod app {
     /// Processes the data read from the gyroscope and checks for anomalies.
     #[task(
     priority = 1,
-    shared = [sensor_data, new_data_ready, read_sensor_total_cycles, read_sensor_count, process_data_total_cycles, process_data_count],
-    local = [itm, prev_data, counter, anomaly_counter])]
+    shared = [sensor_data, new_data_ready,
+    read_sensor_total_cycles, read_sensor_count,
+    process_data_total_cycles, process_data_count,
+    itm],
+    local = [ prev_data, counter, anomaly_counter])]
     async fn process_data(mut cx: process_data::Context) {
+        log_info!(cx, "ProcessData", "Processing data...");
         let start = DWT::cycle_count();
         // Access shared and local resources
-        let itm = cx.local.itm;
         let prev_data = cx.local.prev_data;
         let counter = cx.local.counter;
         let anomaly_counter = cx.local.anomaly_counter;
@@ -282,8 +290,9 @@ mod app {
 
         if delta_x > MAX_DELTA || delta_y > MAX_DELTA || delta_z > MAX_DELTA {
             *anomaly_counter += 1;
-            iprintln!(
-                &mut itm.stim[0],
+            log_warn!(
+                cx,
+                "ProcessData",
                 "⚠️  ANOMALY #{}: Δx={:.2}, Δy={:.2}, Δz={:.2}",
                 *anomaly_counter,
                 delta_x,
@@ -296,8 +305,9 @@ mod app {
         *prev_data = (x, y, z);
         // Print every 4th iteration to avoid flooding the ITM
         if *counter % 4 == 0 {
-            iprintln!(
-                &mut itm.stim[0],
+            log_info!(
+                cx,
+                "ProcessData",
                 "X: {:7.2}°/s | Y: {:7.2}°/s | Z: {:7.2}°/s",
                 x,
                 y,
@@ -352,27 +362,33 @@ mod app {
             let total_period_us = 2_500_000.0;
             // CPU Usage = (Time spent executing / Total measurement time) × 100%
             let cpu_usage = (total_time_us / total_period_us) * 100.0;
-            iprintln!(&mut itm.stim[0], "");
-            iprintln!(
-                &mut itm.stim[0],
+
+            log_stats!(cx, "ProcessData", "");
+            log_stats!(cx, "ProcessData", "────────────────────────────────────────────────────────");
+            log_stats!(
+                cx,
+                "ProcessData",
                 "📊 System Stats (every 1000 process_data calls / ~2.5s):"
             );
-            iprintln!(
-                &mut itm.stim[0],
+            log_stats!(
+                cx,
+                "ProcessData",
                 "  Process Data Avg: {:.3}μs ({} calls)",
                 process_time_us,
                 process_count
             );
-            iprintln!(
-                &mut itm.stim[0],
+            log_stats!(
+                cx,
+                "ProcessData",
                 "  Read Sensor Avg: {:.3}μs ({} calls)",
                 read_time_us,
                 read_count
             );
-            iprintln!(&mut itm.stim[0], "  Total Time: {:.3}μs", total_time_us);
-            iprintln!(&mut itm.stim[0], "  Anomalies: {}", *anomaly_counter);
-            iprintln!(&mut itm.stim[0], "  CPU Usage: {:.2}%", cpu_usage);
-            iprintln!(&mut itm.stim[0], "──────────────────────────────────────");
+            log_stats!(cx, "ProcessData", "  Total Time: {:.3}μs", total_time_us);
+            log_stats!(cx, "ProcessData", "  Anomalies: {}", *anomaly_counter);
+            log_stats!(cx, "ProcessData", "  CPU Usage: {:.2}%", cpu_usage);
+            log_stats!(cx, "ProcessData", "────────────────────────────────────────────────────────");
+            log_stats!(cx, "ProcessData", "");
 
             // Reset counters for next measurement window
             cx.shared.process_data_total_cycles.lock(|total| {

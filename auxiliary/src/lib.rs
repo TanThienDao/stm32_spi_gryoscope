@@ -24,8 +24,8 @@ pub use stm32f3_discovery::stm32f3xx_hal::{
 };
 
 // Custom driver module for I3G4250D
-pub mod gyro_driver;
-pub use gyro_driver::{DataRate, GyroDriver, Range};
+pub mod gyroscope_driver;
+pub use gyroscope_driver::{DataRate, GyroDriver, Range};
 
 // Interrupt handler module for Phase 2
 pub mod interrupt_handler;
