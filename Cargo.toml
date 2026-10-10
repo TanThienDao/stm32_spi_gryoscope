@@ -4,11 +4,19 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Tan Dao"]
 
+[features]
+default = ["production"]
+production = ["enable-stats"]
+development = ["debug-logs", "enable-stats"]
+debug-logs = []
+enable-stats = []
+
 [dependencies]
 auxiliary = { path = "auxiliary" }
 stm32f3-discovery = "0.7.2"
 rtic = {version= "2.3.1", features = ["thumbv7-backend"] }
 cortex-m = "0.7.5"
+
 [profile.release]
 opt-level = 3
 

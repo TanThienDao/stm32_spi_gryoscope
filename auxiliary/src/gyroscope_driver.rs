@@ -19,7 +19,7 @@
 
 use embedded_hal::blocking::spi::Transfer;
 use embedded_hal::digital::v2::OutputPin;
-
+use embedded_hal::prelude::_embedded_hal_blocking_spi_Write;
 // =====================================================================
 // REGISTER ADDRESS MAP
 // =====================================================================

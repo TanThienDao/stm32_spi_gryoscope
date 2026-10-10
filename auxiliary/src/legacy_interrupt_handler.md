@@ -1,3 +1,4 @@
+```rust
 //! Interrupt handler module for Phase 2 - Timer-based implementation
 //!
 //! This module provides shared data structures for interrupt handlers.
@@ -20,3 +21,6 @@ pub static NEW_DATA_READY: Mutex<RefCell<bool>> =
 
 
 
+
+
+```
