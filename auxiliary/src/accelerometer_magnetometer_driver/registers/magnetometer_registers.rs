@@ -39,8 +39,8 @@ pub const MAG_OUT_T_H: u8 = 0x6F;      // Temperature high byte
 // =====================================================================
 // MAG_CFG_REG_A BIT DEFINITIONS
 // =====================================================================
+/// Bit:       7          6         5       4     3      2      1     0
 ///      COMP_TEMP_EN   REBOOT   SOFT_RST   LP   ODR1   ODR0   MD1   MD0
-/// bit:       7          6         5       4     3      2      1     0
 
 /// Temperature Compensation Enable (bit 7)
 pub const MAG_TEMP_ENABLE: u8 = 0x01 << 7;
