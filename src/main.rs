@@ -2,7 +2,7 @@
 #![no_std]
 
 mod logging;
-
+mod config;
 use rtic::app;
 // ===== RTIC APP  =====
 
@@ -13,6 +13,8 @@ mod app {
     use crate::{log_debug, log_info, log_init, log_stats};
     use auxiliary::*;
     use rtic::Mutex;
+    use crate::config::AppConfig;
+
     // ===== SHARED RESOURCES =====
     /// Resources shared between tasks (protected by RTIC)
     #[shared]
@@ -69,6 +71,11 @@ mod app {
         // SPI1 Configuration Start
         //==============================================================
 
+        // Note: How to know where to look for the SPI pins?
+        // Check the STM32F303xB STM32F303xC datasheet, specifically the "Alternate Function Mapping" section.
+        // For SPI1, the default pins are PA5 (SCK), PA6 (MISO), and PA7 (MOSI).
+        // These pins are configured in alternate function mode AF5 for SPI1.
+        // Table 14 Page 45 in STM32F303xB STM32F303xC datasheet.
         let mut gpioa = ctx.device.GPIOA.split(&mut rcc.ahb);
         let mut gpioe = ctx.device.GPIOE.split(&mut rcc.ahb);
         // SPI pins (PA5=SCK, PA6=MISO, PA7=MOSI)
@@ -86,6 +93,7 @@ mod app {
                 .into_af5_push_pull(&mut gpioa.moder, &mut gpioa.otyper, &mut gpioa.afrl);
 
         // PE3 CS pin (in STM32F3, this is the NSS Slave Select pin)
+        // Note: Check
         let cs = gpioe
             .pe3
             .into_push_pull_output(&mut gpioe.moder, &mut gpioe.otyper);
@@ -106,12 +114,41 @@ mod app {
             ctx.device.SPI1,
             (sck, miso, mosi),
             mode,
-            Hertz(1_000_000), // 1 MHz Config clock baud rate, can be adjusted based on the gyroscope's datasheet
+            Hertz(1_000_000), // 1 MHz Config clock baud rate, can be adjusted based on the gyroscope's datasheet (SPI clock frequency) max is 10 MHz for I3G4250D
             clocks,
             &mut rcc.apb2,
         );
         //==============================================================
         // SPI1 Configuration End
+        //==============================================================
+
+        //==============================================================
+        // I2C Configuration Start
+        //==============================================================
+        // Note: How to know where to look for the I2C pins?
+        // Check the STM32F303xB STM32F303xC datasheet, specifically the "Alternate Function Mapping" section.
+        // For I2C1, the default pins are PB6 (SCL) and PB7 (SDA).
+        // These pins are configured in alternate function mode AF4 for I2C1.
+        // Table 14 Page 45 in STM32F303xB STM32F303xC datasheet.
+        let mut gpiob = ctx.device.GPIOB.split(&mut rcc.ahb);
+        let scl =
+            gpiob
+                .pb6
+                .into_af4_open_drain(&mut gpiob.moder, &mut gpiob.otyper, &mut gpiob.afrl);
+        let sda =
+            gpiob
+                .pb7
+                .into_af4_open_drain(&mut gpiob.moder, &mut gpiob.otyper, &mut gpiob.afrl);
+        let i2c = I2c::new(
+            ctx.device.I2C1,
+            (scl, sda),
+            Hertz(100_000), // 100 kHz standard mode, 400 kHz fast mode, 1 MHz fast mode plus.
+            clocks,
+            &mut rcc.apb1,
+        );
+
+        //==============================================================
+        // I2C Configuration End
         //==============================================================
 
         let delay = Delay::new(ctx.core.SYST, clocks);
@@ -125,6 +162,15 @@ mod app {
             itm,
             "=============================================================="
         );
+
+        log_init!(itm,"--------------------------------------------------------------");
+        log_init!(itm, "📋 Configuration Loaded:");
+        log_init!(itm," Debug Logs: {}", AppConfig::DEBUG_ENABLED);
+        log_init!(itm," Stats Enabled: {}", AppConfig::STATS_ENABLED);
+        log_init!(itm," Max Angular Velocity Change: {}°/s", AppConfig::MAX_ANGULAR_VELOCITY_CHANGE);
+        log_init!(itm," Log Frequency: Every {} iterations", AppConfig::LOG_FREQUENCY);
+        log_init!(itm," Stats Interval: Every {} iterations", AppConfig::STATS_INTERVAL);
+        log_init!(itm,"--------------------------------------------------------------");
 
         // Step 1: Detect Gyro driver
         log_init!(itm, "Step 1: Detect Gyro driver...");
@@ -212,6 +258,9 @@ mod app {
         //sleeps when nothing to do
         log_info!(cx, "Idle", "Waiting for new data...");
         loop {
+            if AppConfig::DEBUG_ENABLED {
+                log_debug!(cx, "Idle", "CPU is idle, waiting for new data...");
+            }
             asm::wfi();
         }
     }
@@ -224,6 +273,9 @@ mod app {
     shared = [sensor_data, new_data_ready, read_sensor_total_cycles, read_sensor_count,itm],
     local = [gyro])]
     fn read_sensor(mut cx: read_sensor::Context) {
+        if AppConfig::DEBUG_ENABLED {
+            log_debug!(cx, "ReadSensor", "TIM2 interrupt fired, reading sensor data...");
+        }
         let start = DWT::cycle_count();
         // Clear the update interrupt flag (UIF) for TIM2 to acknowledge the interrupt
         let _ = timer::tim2::Tim2Guard::check_and_clear_uif();
@@ -269,7 +321,7 @@ mod app {
         let prev_data = cx.local.prev_data;
         let counter = cx.local.counter;
         let anomaly_counter = cx.local.anomaly_counter;
-        const MAX_DELTA: f32 = 100.0; // Maximum allowed change in angular velocity
+        const MAX_DELTA: f32 = AppConfig::MAX_ANGULAR_VELOCITY_CHANGE; // Maximum allowed change in angular velocity
 
         // Check if new data is ready
         let has_data = cx.shared.new_data_ready.lock(|ready| {
@@ -307,8 +359,8 @@ mod app {
 
         // Update previous data for the next comparison
         *prev_data = (x, y, z);
-        // Print every 4th iteration to avoid flooding the ITM
-        if *counter % 4 == 0 {
+        // Print every LOG_FREQUENCY iteration to avoid flooding the ITM
+        if *counter % AppConfig::LOG_FREQUENCY == 0 {
             log_info!(
                 cx,
                 "ProcessData",
@@ -319,6 +371,16 @@ mod app {
             );
         }
         *counter += 1;
+
+        if AppConfig::DEBUG_ENABLED {
+            log_debug!(
+                cx,
+                "ProcessData",
+                "counter: {}, read_sensor_count: {}",
+                *counter,
+                cx.shared.read_sensor_count.lock(|count| *count),
+            );
+        }
 
         // Measure loop performance
         let end = DWT::cycle_count();
@@ -336,7 +398,7 @@ mod app {
         let should_print = cx
             .shared
             .process_data_count
-            .lock(|count| *count % 1000 == 0);
+            .lock(|count| *count % AppConfig::STATS_INTERVAL == 0);
 
         if should_print {
             let (process_total, process_count, read_total, read_count) =
@@ -350,7 +412,7 @@ mod app {
                     })
                 });
 
-            let avg_process_cycles = (process_total / 1000) as u32;
+            let avg_process_cycles = (process_total / AppConfig::STATS_INTERVAL) as u32;
             let avg_read_cycles = if read_count > 0 {
                 read_total as f64 / read_count as f64
             } else {
@@ -376,7 +438,8 @@ mod app {
             log_stats!(
                 cx,
                 "ProcessData",
-                "📊 System Stats (every 1000 process_data calls / ~2.5s):"
+                "📊 System Stats (every {} process_data calls / ~2.5s):",
+                AppConfig::STATS_INTERVAL
             );
             log_stats!(
                 cx,

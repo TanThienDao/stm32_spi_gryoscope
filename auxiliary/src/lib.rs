@@ -20,6 +20,7 @@ pub use stm32f3_discovery::stm32f3xx_hal::{
     gpio::gpioe::PE3,
     prelude::*,
     spi::{MisoPin, Mode, MosiPin, Phase, Polarity, SckPin, Spi},
+    i2c::{I2c},
     time::rate::Hertz,
 };
 
@@ -28,10 +29,11 @@ pub mod gyroscope_driver;
 pub use gyroscope_driver::{DataRate, GyroDriver, Range};
 
 // Interrupt handler module for Phase 2
-pub mod interrupt_handler;
+//pub mod interrupt_handler;
 pub mod timer;
-pub mod nvic;
+//pub mod nvic;
 
+pub mod accelerometer_magnetometer_driver;
 pub fn init() -> (
     ITM,
     Delay,

@@ -583,6 +583,8 @@ X:   12.38°/s | Y:   -5.69°/s | Z:    0.88°/s
 X:   12.52°/s | Y:   -5.75°/s | Z:    0.92°/s
 ...
 ```
+### Result:
+![log_example.png](docs/Screenshots/log_example.png)
 
 ### Expected Behavior
 - **Data Rate:** New readings every 2.5 ms (400 Hz from TIM2 interrupt)
