@@ -1,6 +1,8 @@
 //! =====================================================================
 //! REGISTER ADDRESS MAP
 //! This file contains the register address map for the LSM303AGR magnetometer.
+//!
+//! //! Copyright (c) 2026, Tan Dao.
 //! =====================================================================
 
 /// Section 6.1.1 of LSM303AGR datasheet specifies I2C slave addresses for accelerometer and magnetometer.
@@ -55,6 +57,10 @@ pub const MAG_ODR_100_HZ: u8 = 0x03 << 2;                        // 100 Hz
 pub const MAG_MODE_CONTINUOUS: u8 = 0x00;                        // Continuous-conversion mode
 pub const MAG_MODE_SINGLE: u8 = 0x01;                            // Single-conversion mode
 pub const MAG_MODE_IDLE: u8 = 0x02;                              // Idle mode
+
+///Power Mode (bit 3)
+pub const MAG_LP_ENABLE: u8 = 0x01 << 3;                        // Low-power mode
+pub const MAG_LP_DISABLE: u8 = 0x00 << 3;                       // High-performance mode (default)
 
 
 // =====================================================================

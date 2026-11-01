@@ -1,19 +1,19 @@
 #![no_main]
 #![no_std]
 
-mod logging;
 mod config;
+mod logging;
 use rtic::app;
 // ===== RTIC APP  =====
 
 /// Shared resources (protected by RTIC)
 #[app(device = stm32f3_discovery::stm32f3xx_hal::pac, dispatchers = [EXTI0])]
 mod app {
+    use crate::config::AppConfig;
     use crate::log_warn;
     use crate::{log_debug, log_info, log_init, log_stats};
     use auxiliary::*;
     use rtic::Mutex;
-    use crate::config::AppConfig;
 
     // ===== SHARED RESOURCES =====
     /// Resources shared between tasks (protected by RTIC)
@@ -163,14 +163,32 @@ mod app {
             "=============================================================="
         );
 
-        log_init!(itm,"--------------------------------------------------------------");
+        log_init!(
+            itm,
+            "--------------------------------------------------------------"
+        );
         log_init!(itm, "📋 Configuration Loaded:");
-        log_init!(itm," Debug Logs: {}", AppConfig::DEBUG_ENABLED);
-        log_init!(itm," Stats Enabled: {}", AppConfig::STATS_ENABLED);
-        log_init!(itm," Max Angular Velocity Change: {}°/s", AppConfig::MAX_ANGULAR_VELOCITY_CHANGE);
-        log_init!(itm," Log Frequency: Every {} iterations", AppConfig::LOG_FREQUENCY);
-        log_init!(itm," Stats Interval: Every {} iterations", AppConfig::STATS_INTERVAL);
-        log_init!(itm,"--------------------------------------------------------------");
+        log_init!(itm, " Debug Logs: {}", AppConfig::DEBUG_ENABLED);
+        log_init!(itm, " Stats Enabled: {}", AppConfig::STATS_ENABLED);
+        log_init!(
+            itm,
+            " Max Angular Velocity Change: {}°/s",
+            AppConfig::MAX_ANGULAR_VELOCITY_CHANGE
+        );
+        log_init!(
+            itm,
+            " Log Frequency: Every {} iterations",
+            AppConfig::LOG_FREQUENCY
+        );
+        log_init!(
+            itm,
+            " Stats Interval: Every {} iterations",
+            AppConfig::STATS_INTERVAL
+        );
+        log_init!(
+            itm,
+            "--------------------------------------------------------------"
+        );
 
         // Step 1: Detect Gyro driver
         log_init!(itm, "Step 1: Detect Gyro driver...");
@@ -274,7 +292,11 @@ mod app {
     local = [gyro])]
     fn read_sensor(mut cx: read_sensor::Context) {
         if AppConfig::DEBUG_ENABLED {
-            log_debug!(cx, "ReadSensor", "TIM2 interrupt fired, reading sensor data...");
+            log_debug!(
+                cx,
+                "ReadSensor",
+                "TIM2 interrupt fired, reading sensor data..."
+            );
         }
         let start = DWT::cycle_count();
         // Clear the update interrupt flag (UIF) for TIM2 to acknowledge the interrupt

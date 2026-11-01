@@ -1,3 +1,4 @@
+//! =====================================================================
 //! Custom I3G4250D Driver
 //!
 //! This module provides direct SPI control over the I3G4250D gyroscope.
@@ -16,6 +17,9 @@
 //!     iprintln!(&mut itm.stim[0], "X: {:.2}°/s, Y: {:.2}°/s, Z: {:.2}°/s", x, y, z);
 //! }
 //! ```
+//!
+//! Copyright (c) 2026, Tan Dao.
+//! =====================================================================
 
 use embedded_hal::blocking::spi::Transfer;
 use embedded_hal::digital::v2::OutputPin;
