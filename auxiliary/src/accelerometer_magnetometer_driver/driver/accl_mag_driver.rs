@@ -209,19 +209,18 @@ impl<I2C> Lsm303agr<I2C> {
     /// Arguments:
     /// * `&mut self` - The mutable reference to the LSM303AGR driver
     /// Returns:
-    /// * `Ok((bool, bool))` - A tuple where the first element indicates whether the accelerometer
-    ///      identity is verified, and the second element indicates whether the magnetometer identity
-    ///      is verified.
+    /// * `Ok((u8, u8))` - A tuple where the first element is the accelerometer ID
+    ///      and the second element is the magnetometer ID.
     /// * `Err(DriverError<I2C::Error>)` - If there is an I2C communication error while reading
     ///      either WHO_AM_I register.
     ///
-    pub fn verify_device_identity(&mut self) -> Result<(bool, bool), DriverError<I2C::Error>>
+    pub fn verify_device_identity(&mut self) -> Result<(u8, u8), DriverError<I2C::Error>>
     where
         I2C: WriteRead,
     {
         let accel_id = self.who_am_i_accel()?;
         let mag_id = self.who_am_i_mag()?;
-        Ok((accel_id == 0x33, mag_id == 0x40)) // Return true if IDs match expected values
+        Ok((accel_id, mag_id)) // Return the IDs of the accelerometer and magnetometer
     }
 
     // todo implement the init and set range after here !!!

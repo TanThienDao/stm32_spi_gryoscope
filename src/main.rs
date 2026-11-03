@@ -13,6 +13,9 @@ mod app {
     use crate::log_warn;
     use crate::{log_debug, log_info, log_init, log_stats};
     use auxiliary::*;
+    use auxiliary::accelerometer_magnetometer_driver::driver::accl_mag_driver::Lsm303agr;
+    use auxiliary::accelerometer_magnetometer_driver::driver::mag_config::{MagRange};
+    use auxiliary::accelerometer_magnetometer_driver::driver::accel_config::{AccelRange};
     use rtic::Mutex;
 
     // ===== SHARED RESOURCES =====
@@ -190,8 +193,8 @@ mod app {
             "--------------------------------------------------------------"
         );
 
-        // Step 1: Detect Gyro driver
-        log_init!(itm, "Step 1: Detect Gyro driver...");
+        // Step 1.1: Detect Gyro driver
+        log_init!(itm, "Step 1.1: Detect Gyro driver...");
         let mut gryo = GyroDriver::new(spi, cs);
         log_init!(itm, "✓ Gyro driver initialized.");
         match gryo.who_am_i() {
@@ -205,6 +208,25 @@ mod app {
             }
             Err(_) => {
                 log_init!(itm, "✗ Error reading Gyro ID!");
+                loop {}
+            }
+        }
+
+        // Step 1.2: Detect Magnetometer driver
+        log_init!(itm, "Step 1.2: Detect Magnetometer driver...");
+        let mut accl_mag_driver = Lsm303agr::new(i2c, AccelRange::G2, MagRange::Gauss50);
+        match accl_mag_driver.verify_device_identity() {
+            Ok(id) => {
+                if id.0 == 0x33 && id.1 == 0x40 {
+                    log_init!(itm, "✓ Accelerometer ID: 0x{:X} (LSM303AGR)", id.0);
+                    log_init!(itm, "✓ Magnetometer ID: 0x{:X} (LSM303AGR)", id.1);
+                } else {
+                    log_init!(itm, "✗ Unexpected Magnetometer ID: 0x{:X} and 0x{:X}", id.0, id.1);
+                    loop {}
+                }
+            }
+            Err(_) => {
+                log_init!(itm, "✗ Error reading Magnetometer ID!");
                 loop {}
             }
         }
