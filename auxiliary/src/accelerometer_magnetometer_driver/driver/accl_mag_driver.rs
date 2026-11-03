@@ -14,6 +14,21 @@ use crate::accelerometer_magnetometer_driver::registers::{
     accelerometer_registers::*, magnetometer_registers::*,
 };
 use embedded_hal::blocking::i2c::{Write, WriteRead};
+
+/// Represents errors that can occur in the LSM303AGR driver.
+#[derive(Debug, Clone, Copy)]
+pub enum DriverError<I2CError> {
+    /// I2C communication error
+    Bus(I2CError),
+    /// Invalid configuration parameter
+    InvalidConfig,
+}
+
+impl<I2CError> From<I2CError> for DriverError<I2CError> {
+    fn from(err: I2CError) -> Self {
+        DriverError::Bus(err)
+    }
+}
 /// Represents the LSM303AGR driver, generic over the I2C peripheral type.
 ///
 /// # Type Parameters
@@ -24,14 +39,6 @@ pub struct Lsm303agr<I2C> {
     i2c: I2C,
     accel_range: AccelRange, // Store for scaling factor accelerometer range selection
     mag_range: MagRange,     // Store for scaling factor magnetometer range selection
-}
-/// Represents errors that can occur in the LSM303AGR driver.
-#[derive(Debug, Clone, Copy)]
-pub enum DriverError<I2CError> {
-    /// I2C communication error
-    Bus(I2CError),
-    /// Invalid configuration parameter
-    InvalidConfig,
 }
 
 impl<I2C> Lsm303agr<I2C> {
@@ -76,8 +83,8 @@ impl<I2C> Lsm303agr<I2C> {
     {
         let payload = [reg_address, data];
         self.i2c
-            .write(ACCEL_ADDRESS, &payload)
-            .map_err(DriverError::Bus)
+            .write(ACCEL_ADDRESS, &payload)?;
+        Ok(())
     }
 
     /// Read from an accelerometer register.
@@ -104,8 +111,7 @@ impl<I2C> Lsm303agr<I2C> {
         I2C: WriteRead,
     {
         self.i2c
-            .write_read(ACCEL_ADDRESS, &[reg_address], buffer)
-            .map_err(DriverError::Bus)?;
+            .write_read(ACCEL_ADDRESS, &[reg_address], buffer)?;
         Ok(buffer[0])
     }
 
@@ -125,8 +131,9 @@ impl<I2C> Lsm303agr<I2C> {
     {
         let payload = [reg_address, data];
         self.i2c
-            .write(MAG_ADDRESS, &payload)
-            .map_err(DriverError::Bus)
+            .write(MAG_ADDRESS, &payload)?;
+
+        Ok(())
     }
 
     /// Read from a magnetometer register.
@@ -148,8 +155,8 @@ impl<I2C> Lsm303agr<I2C> {
         I2C: WriteRead,
     {
         self.i2c
-            .write_read(MAG_ADDRESS, &[reg_address], buffer)
-            .map_err(DriverError::Bus)?;
+            .write_read(MAG_ADDRESS, &[reg_address], buffer)?;
+
         Ok(buffer[0])
     }
     /// Read the WHO_AM_I_A register of the accelerometer to verify its identity.
@@ -169,8 +176,7 @@ impl<I2C> Lsm303agr<I2C> {
         I2C: WriteRead,
     {
         let mut buffer = [0u8; 1];
-        self.read_accel(ACCEL_WHO_AM_I, &mut buffer)
-            .map_err(DriverError::Bus)?;
+        self.read_accel(ACCEL_WHO_AM_I, &mut buffer)?;
         Ok(buffer[0])
     }
     /// Read the WHO_AM_I_M register of the magnetometer to verify its identity.
@@ -189,8 +195,7 @@ impl<I2C> Lsm303agr<I2C> {
         I2C: WriteRead,
     {
         let mut buffer = [0u8; 1];
-        self.read_mag(MAG_WHO_AM_I, &mut buffer)
-            .map_err(DriverError::Bus)?;
+        self.read_mag(MAG_WHO_AM_I, &mut buffer)?;
         Ok(buffer[0])
     }
 
@@ -214,8 +219,8 @@ impl<I2C> Lsm303agr<I2C> {
     where
         I2C: WriteRead,
     {
-        let accel_id = self.who_am_i_accel().map_err(DriverError::Bus)?;
-        let mag_id = self.who_am_i_mag().map_err(DriverError::Bus)?;
+        let accel_id = self.who_am_i_accel()?;
+        let mag_id = self.who_am_i_mag()?;
         Ok((accel_id == 0x33, mag_id == 0x40)) // Return true if IDs match expected values
     }
 
