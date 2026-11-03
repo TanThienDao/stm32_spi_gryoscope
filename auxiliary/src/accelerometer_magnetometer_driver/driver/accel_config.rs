@@ -53,7 +53,7 @@ pub enum AccelOperatingMode {
 }
 ///
 /// Usage Example:
-/// 
+///
 /// High-resolution mode at ±2g
 /// let config = AccelConfig::new(AccelRange::G2, AccelOperatingMode::HighResolution);
 /// let scale = config.scale_factor_mg(); // Returns 0.98 mg/LSB
@@ -83,7 +83,9 @@ impl AccelOperatingMode {
 /// Combines range and operating mode to determine mg/LSB conversion factor.
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub struct AccelConfig {
+    /// Full-scale range selection (±2g, ±4g, ±8g, ±16g)
     pub range: AccelRange,
+    /// Operating mode selection (High-Resolution, Normal, Low-Power)
     pub mode: AccelOperatingMode,
 }
 
@@ -119,23 +121,23 @@ impl AccelConfig {
         match (self.range, self.mode) {
             // ========== High-Resolution Mode (12-bit output) ==========
             // Best accuracy, typical values from datasheet
-            (AccelRange::G2, AccelOperatingMode::HighResolution) => 0.98,     // 1 mg/LSB nominal
-            (AccelRange::G4, AccelOperatingMode::HighResolution) => 1.95,     // 2 mg/LSB nominal
-            (AccelRange::G8, AccelOperatingMode::HighResolution) => 3.9,      // 4 mg/LSB nominal
-            (AccelRange::G16, AccelOperatingMode::HighResolution) => 11.72,   // 12 mg/LSB nominal
+            (AccelRange::G2, AccelOperatingMode::HighResolution) => 0.98, // 1 mg/LSB nominal
+            (AccelRange::G4, AccelOperatingMode::HighResolution) => 1.95, // 2 mg/LSB nominal
+            (AccelRange::G8, AccelOperatingMode::HighResolution) => 3.9,  // 4 mg/LSB nominal
+            (AccelRange::G16, AccelOperatingMode::HighResolution) => 11.72, // 12 mg/LSB nominal
 
             // ========== Normal Mode (10-bit output, default) ==========
             // Balanced resolution and power consumption
-            (AccelRange::G2, AccelOperatingMode::Normal) => 3.9,      // 4 mg/LSB nominal
-            (AccelRange::G4, AccelOperatingMode::Normal) => 7.82,     // 8 mg/LSB nominal
-            (AccelRange::G8, AccelOperatingMode::Normal) => 15.63,    // 16 mg/LSB nominal
-            (AccelRange::G16, AccelOperatingMode::Normal) => 46.9,    // 48 mg/LSB nominal
+            (AccelRange::G2, AccelOperatingMode::Normal) => 3.9, // 4 mg/LSB nominal
+            (AccelRange::G4, AccelOperatingMode::Normal) => 7.82, // 8 mg/LSB nominal
+            (AccelRange::G8, AccelOperatingMode::Normal) => 15.63, // 16 mg/LSB nominal
+            (AccelRange::G16, AccelOperatingMode::Normal) => 46.9, // 48 mg/LSB nominal
 
             // ========== Low-Power Mode (8-bit output) ==========
             // Lower resolution, reduced power consumption
-            (AccelRange::G2, AccelOperatingMode::LowPower) => 15.63,   // 16 mg/LSB nominal
-            (AccelRange::G4, AccelOperatingMode::LowPower) => 31.26,   // 32 mg/LSB nominal
-            (AccelRange::G8, AccelOperatingMode::LowPower) => 62.52,   // 64 mg/LSB nominal
+            (AccelRange::G2, AccelOperatingMode::LowPower) => 15.63, // 16 mg/LSB nominal
+            (AccelRange::G4, AccelOperatingMode::LowPower) => 31.26, // 32 mg/LSB nominal
+            (AccelRange::G8, AccelOperatingMode::LowPower) => 62.52, // 64 mg/LSB nominal
             (AccelRange::G16, AccelOperatingMode::LowPower) => 187.58, // 192 mg/LSB nominal
         }
     }

@@ -52,7 +52,6 @@ impl TimerConfig {
             return Err("Interrupt enable frequency must be less than or equal to target timer clock frequency");
         }
         Ok(())
-
     }
 
     pub fn calculate_timer_values(&self) -> (u16, u32) {

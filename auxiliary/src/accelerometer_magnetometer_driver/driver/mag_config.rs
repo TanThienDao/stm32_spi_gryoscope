@@ -25,7 +25,7 @@ impl MagRange {
 /// Magnetometer data rate selection.
 #[derive(Debug, Clone, Copy)]
 pub enum MadDataRate {
-    Hz10,   // Default data rate, 10 Hz
+    Hz10, // Default data rate, 10 Hz
     Hz20,
     Hz50,
     Hz100,
@@ -38,7 +38,7 @@ impl MadDataRate {
             MadDataRate::Hz10 => MAG_ODR_10_HZ,   // 10 Hz
             MadDataRate::Hz20 => MAG_ODR_20_HZ,   // 20 Hz
             MadDataRate::Hz50 => MAG_ODR_50_HZ,   // 50 Hz
-            MadDataRate::Hz100 => MAG_ODR_100_HZ,  // 100 Hz
+            MadDataRate::Hz100 => MAG_ODR_100_HZ, // 100 Hz
         }
     }
 }
@@ -72,6 +72,7 @@ impl MagOperatingMode {
 }
 
 /// Magnetometer Power Mode selection.
+#[derive(Debug, Clone, Copy)]
 pub enum MagPowerMode {
     /// High resolution mode, Max ODR 100 Hz
     HighResolution,
@@ -82,15 +83,29 @@ impl MagPowerMode {
     /// Get the register value for CFG_REG_A_M LP bits 3
     pub fn cfg_reg_a_m_power_bits(&self) -> u8 {
         match self {
-            MagPowerMode::HighResolution => MAG_LP_DISABLE,     // High resolution mode
-            MagPowerMode::LowPower => MAG_LP_ENABLE,           // Low-power mode
+            MagPowerMode::HighResolution => MAG_LP_DISABLE, // High resolution mode
+            MagPowerMode::LowPower => MAG_LP_ENABLE,        // Low-power mode
         }
     }
     pub fn set_mag_power_mode(&self, mode: MagPowerMode) -> u8 {
         match mode {
-            MagPowerMode::HighResolution => MAG_LPF_ENABLE,     // High resolution mode
-            MagPowerMode::LowPower => MAG_LP_DISABLE,           // Low-power mode
+            MagPowerMode::HighResolution => MAG_LPF_ENABLE, // High resolution mode
+            MagPowerMode::LowPower => MAG_LP_DISABLE,       // Low-power mode
         }
     }
-    // todo implement the set mag power mide function after driver. 
+    // todo implement the set mag power mode function after driver.
+}
+
+/// Magnetometer configuration for the LSM303AGR driver.
+/// This struct holds the configuration parameters for the magnetometer driver.
+#[derive(Debug, Clone, Copy)]
+pub struct MagConfig {
+    /// Full-scale range selection (±50 gauss)
+    pub range: MagRange,
+    /// Data rate selection (10 Hz, 20 Hz, 50 Hz, 100 Hz)
+    pub data_rate: MadDataRate,
+    /// Operating mode selection (Continuous, Single, Idle)
+    pub operating_mode: MagOperatingMode,
+    /// Power mode selection (High-Resolution, Low-Power)
+    pub power_mode: MagPowerMode,
 }
