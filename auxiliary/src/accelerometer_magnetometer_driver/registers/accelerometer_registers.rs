@@ -71,7 +71,7 @@ pub const ACCEL_LP_ENABLE: u8 = 0x01 << 3; // Low-power mode enable (8 bit data 
 pub const ACCEL_X_ENABLE: u8 = 0x01 << 0; // X-axis enable
 pub const ACCEL_Y_ENABLE: u8 = 0x01 << 1; // Y-axis enable
 pub const ACCEL_Z_ENABLE: u8 = 0x01 << 2; // Z-axis enable
-pub const ACCEL_ALL_AXES: u8 = 0x07; // All axes enable
+pub const ACCEL_ALL_AXES: u8 = 0x07; // All axes enable (Default: X, Y, Z enabled)
 
 // =====================================================================
 // ACCEL_CTRL_REG2 BIT DEFINITIONS

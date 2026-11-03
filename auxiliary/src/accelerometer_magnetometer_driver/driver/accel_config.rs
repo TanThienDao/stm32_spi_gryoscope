@@ -68,13 +68,49 @@ pub enum AccelOperatingMode {
 impl AccelOperatingMode {
     /// Get the control register bits needed to set this operating mode.
     ///
-    /// Returns a tuple of (CTRL_REG4_bits, CTRL_REG1_bits) to configure the mode.
+    /// Returns a tuple of (CTRL_REG1_bits, CTRL_REG4_bits) to configure the mode.
     /// The caller should OR these values with other bits in the respective registers.
     pub fn ctrl_reg_bits(&self) -> (u8, u8) {
         match self {
-            AccelOperatingMode::HighResolution => (ACCEL_HR_ENABLE, 0x00),
+            AccelOperatingMode::HighResolution => (0x00, ACCEL_HR_ENABLE),
             AccelOperatingMode::Normal => (0x00, 0x00),
-            AccelOperatingMode::LowPower => (0x00, ACCEL_LP_ENABLE),
+            AccelOperatingMode::LowPower => (ACCEL_LP_ENABLE, 0x00),
+        }
+    }
+}
+/// Accelerometer output data rate selection
+///
+/// Description: The output data rate (ODR) determines how frequently the accelerometer updates its
+///      data registers with new measurements. The LSM303AGR supports various ODR settings, which.
+///      can be configured in CTRL_REG1_A. The ODR affects both the responsiveness of the sensor and
+///      its power consumption.
+#[derive(PartialEq, Debug, Clone, Copy)]
+pub enum AccelDataRate {
+    PowerDown,
+    Hz1,
+    Hz10,
+    Hz25,
+    Hz50,
+    Hz100,
+    Hz200,
+    Hz400,
+    LowPower1_6KHz,
+    LowPower5_376KHz,
+}
+impl AccelDataRate {
+    /// Get the register value for CTRL_REG1_A ODR bits [7:4]
+    pub fn ctrl_reg1_bits(&self) -> u8 {
+        match self {
+            AccelDataRate::PowerDown => ACCEL_ODR_POWER_DOWN,
+            AccelDataRate::Hz1 => ACCEL_ODR_1_HZ,
+            AccelDataRate::Hz10 => ACCEL_ODR_10_HZ,
+            AccelDataRate::Hz25 => ACCEL_ODR_25_HZ,
+            AccelDataRate::Hz50 => ACCEL_ODR_50_HZ,
+            AccelDataRate::Hz100 => ACCEL_ODR_100_HZ,
+            AccelDataRate::Hz200 => ACCEL_ODR_200_HZ,
+            AccelDataRate::Hz400 => ACCEL_ODR_400_HZ,
+            AccelDataRate::LowPower1_6KHz => ACCEL_ODR_LOW_POWER_1_6_KHZ,
+            AccelDataRate::LowPower5_376KHz => ACCEL_ODR_LOW_POWER_5_376_KHZ,
         }
     }
 }
@@ -87,12 +123,31 @@ pub struct AccelConfig {
     pub range: AccelRange,
     /// Operating mode selection (High-Resolution, Normal, Low-Power)
     pub mode: AccelOperatingMode,
+    /// Output data rate selection (PowerDown, 1Hz, 10Hz, etc.)
+    pub data_rate: AccelDataRate,
 }
 
 impl AccelConfig {
     /// Create a new accelerometer configuration.
-    pub fn new(range: AccelRange, mode: AccelOperatingMode) -> Self {
-        AccelConfig { range, mode }
+    pub fn new(range: AccelRange, mode: AccelOperatingMode, data_rate: AccelDataRate) -> Self {
+        AccelConfig {
+            range,
+            mode,
+            data_rate,
+        }
+    }
+    /// Get the combined register bits for CTRL_REG1_A (data rate, mode, and axis enable).
+    /// This method combines the data rate bits, mode bits, and enables all axes.
+    /// The caller should OR this value with any additional bits needed for specific configurations.
+    pub fn get_ctrl_reg1_bits(&self) -> u8 {
+        self.data_rate.ctrl_reg1_bits() | self.mode.ctrl_reg_bits().0 | ACCEL_ALL_AXES
+    }
+
+    /// Get the combined register bits for CTRL_REG4_A (range and mode).
+    /// This method combines the range bits and mode bits.
+    /// The caller should OR this value with any additional bits needed for specific configurations.
+    pub fn get_ctrl_reg4_bits(&self) -> u8 {
+        self.range.ctrl_reg4_bits() | self.mode.ctrl_reg_bits().1
     }
 
     /// Get the scale factor in mg/LSB for converting raw ADC values to milligrammage.
@@ -100,13 +155,14 @@ impl AccelConfig {
     /// # Arguments
     /// * `range` - The full-scale range setting
     /// * `mode` - The operating mode (High-Res, Normal, or Low-Power)
+    /// * `data_rate` - The output data rate selection (PowerDown, 1Hz, 10Hz, etc.)
     ///
     /// # Returns
     /// Scale factor in mg/LSB (milligrams per Least Significant Bit)
     ///
     /// # Example
     /// ```ignore
-    /// let config = AccelConfig::new(AccelRange::G2, OperatingMode::HighResolution);
+    /// let config = AccelConfig::new(AccelRange::G2, AccelOperatingMode::HighResolution, AccelDataRate::Hz100);
     /// let scale = config.scale_factor_mg();
     /// let raw_value: i16 = 1000; // Example raw ADC reading
     /// let mg = raw_value as f32 * scale; // Convert to milligrams

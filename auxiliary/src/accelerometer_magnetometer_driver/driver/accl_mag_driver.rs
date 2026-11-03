@@ -8,8 +8,10 @@
 //! Copyright (c) 2026, Tan Dao.
 //! =====================================================================
 
-use crate::accelerometer_magnetometer_driver::driver::accel_config::AccelRange;
-use crate::accelerometer_magnetometer_driver::driver::mag_config::{MagOperatingMode, MagRange};
+use crate::accelerometer_magnetometer_driver::driver::accel_config::{AccelConfig, AccelRange};
+use crate::accelerometer_magnetometer_driver::driver::mag_config::{
+    MagConfig, MagOperatingMode, MagRange,
+};
 use crate::accelerometer_magnetometer_driver::registers::{
     accelerometer_registers::*, magnetometer_registers::*,
 };
@@ -37,8 +39,8 @@ impl<I2CError> From<I2CError> for DriverError<I2CError> {
 #[derive(Debug)]
 pub struct Lsm303agr<I2C> {
     i2c: I2C,
-    accel_range: AccelRange, // Store for scaling factor accelerometer range selection
-    mag_range: MagRange,     // Store for scaling factor magnetometer range selection
+    accel_config: AccelConfig, // Store for scaling factor accelerometer configuration
+    mag_config: MagConfig,     // Store for scaling factor magnetometer configuration
 }
 
 impl<I2C> Lsm303agr<I2C> {
@@ -46,22 +48,22 @@ impl<I2C> Lsm303agr<I2C> {
     ///
     /// # Arguments
     /// * `i2c` - The I2C peripheral implementing the required traits.
-    /// * `accel_range` - The desired accelerometer range selection.
-    /// * `mag_range` - The desired magnetometer range selection.
+    /// * `accel_config` - The desired accelerometer configuration.
+    /// * `mag_config` - The desired magnetometer configuration.
     ///
     /// # Returns
     /// A new instance of the LSM303AGR driver.
     pub fn new(
         i2c: I2C,
         // Accelerometer configuration
-        accel_range: AccelRange,
+        accel_config: AccelConfig,
         // Magnetometer configuration
-        mag_range: MagRange,
+        mag_config: MagConfig,
     ) -> Self {
         Lsm303agr {
             i2c,
-            accel_range,
-            mag_range,
+            accel_config,
+            mag_config,
         }
     }
 
@@ -82,8 +84,7 @@ impl<I2C> Lsm303agr<I2C> {
         I2C: Write,
     {
         let payload = [reg_address, data];
-        self.i2c
-            .write(ACCEL_ADDRESS, &payload)?;
+        self.i2c.write(ACCEL_ADDRESS, &payload)?;
         Ok(())
     }
 
@@ -110,8 +111,7 @@ impl<I2C> Lsm303agr<I2C> {
     where
         I2C: WriteRead,
     {
-        self.i2c
-            .write_read(ACCEL_ADDRESS, &[reg_address], buffer)?;
+        self.i2c.write_read(ACCEL_ADDRESS, &[reg_address], buffer)?;
         Ok(buffer[0])
     }
 
@@ -130,8 +130,7 @@ impl<I2C> Lsm303agr<I2C> {
         I2C: Write,
     {
         let payload = [reg_address, data];
-        self.i2c
-            .write(MAG_ADDRESS, &payload)?;
+        self.i2c.write(MAG_ADDRESS, &payload)?;
 
         Ok(())
     }
@@ -154,8 +153,7 @@ impl<I2C> Lsm303agr<I2C> {
     where
         I2C: WriteRead,
     {
-        self.i2c
-            .write_read(MAG_ADDRESS, &[reg_address], buffer)?;
+        self.i2c.write_read(MAG_ADDRESS, &[reg_address], buffer)?;
 
         Ok(buffer[0])
     }
@@ -223,5 +221,20 @@ impl<I2C> Lsm303agr<I2C> {
         Ok((accel_id, mag_id)) // Return the IDs of the accelerometer and magnetometer
     }
 
-    // todo implement the init and set range after here !!!
+    pub fn init(&mut self) -> Result<(), DriverError<I2C::Error>>
+    where
+        I2C: Write,
+    {
+        // Initialize the accelerometer with the provided configuration
+        let ctrl_reg1_a = self.accel_config.get_ctrl_reg1_bits();
+        let ctrl_reg4_a = self.accel_config.get_ctrl_reg4_bits();
+        self.write_accel(ACCEL_CTRL_REG1, ctrl_reg1_a)?;
+        self.write_accel(ACCEL_CTRL_REG4, ctrl_reg4_a)?;
+
+        // Initialize the magnetometer with the provided configuration
+        let cfg_reg_a_m = self.mag_config.cfg_reg_a_m_bits();
+        self.write_mag(MAG_CFG_REG_A, cfg_reg_a_m)?;
+
+        Ok(())
+    }
 }

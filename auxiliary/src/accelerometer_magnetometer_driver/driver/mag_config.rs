@@ -17,28 +17,27 @@ impl MagRange {
     /// Get the register value for CFG_REG_B FULL_SCALE bits [6:5]
     pub fn cfg_reg_b_bits(&self) -> u8 {
         match self {
-            //todo check this again in datasheet seem no data sheet for this
             MagRange::Gauss50 => 10, // 50 gauss
         }
     }
 }
 /// Magnetometer data rate selection.
 #[derive(Debug, Clone, Copy)]
-pub enum MadDataRate {
+pub enum MagDataRate {
     Hz10, // Default data rate, 10 Hz
     Hz20,
     Hz50,
     Hz100,
 }
 
-impl MadDataRate {
+impl MagDataRate {
     /// Get the register value for CFG_REG_A_M ODR bits [3:2]
     pub fn cfg_reg_a_m_odr_bits(&self) -> u8 {
         match self {
-            MadDataRate::Hz10 => MAG_ODR_10_HZ,   // 10 Hz
-            MadDataRate::Hz20 => MAG_ODR_20_HZ,   // 20 Hz
-            MadDataRate::Hz50 => MAG_ODR_50_HZ,   // 50 Hz
-            MadDataRate::Hz100 => MAG_ODR_100_HZ, // 100 Hz
+            MagDataRate::Hz10 => MAG_ODR_10_HZ,   // 10 Hz
+            MagDataRate::Hz20 => MAG_ODR_20_HZ,   // 20 Hz
+            MagDataRate::Hz50 => MAG_ODR_50_HZ,   // 50 Hz
+            MagDataRate::Hz100 => MAG_ODR_100_HZ, // 100 Hz
         }
     }
 }
@@ -103,9 +102,32 @@ pub struct MagConfig {
     /// Full-scale range selection (±50 gauss)
     pub range: MagRange,
     /// Data rate selection (10 Hz, 20 Hz, 50 Hz, 100 Hz)
-    pub data_rate: MadDataRate,
+    pub data_rate: MagDataRate,
     /// Operating mode selection (Continuous, Single, Idle)
     pub operating_mode: MagOperatingMode,
     /// Power mode selection (High-Resolution, Low-Power)
     pub power_mode: MagPowerMode,
+}
+
+impl MagConfig {
+    /// Create a new magnetometer configuration.
+    pub fn new(
+        operating_mode: MagOperatingMode,
+        data_rate: MagDataRate,
+        power_mode: MagPowerMode,
+    ) -> Self {
+        MagConfig {
+            range: MagRange::Gauss50, // Default to ±50 gauss
+            operating_mode,
+            data_rate,
+            power_mode,
+        }
+    }
+
+    /// Get the register value for CFG_REG_A_M based on the configuration.
+    pub fn cfg_reg_a_m_bits(&self) -> u8 {
+        self.data_rate.cfg_reg_a_m_odr_bits()
+            | self.operating_mode.cfg_reg_a_m_md_bits()
+            | self.power_mode.cfg_reg_a_m_power_bits()
+    }
 }
