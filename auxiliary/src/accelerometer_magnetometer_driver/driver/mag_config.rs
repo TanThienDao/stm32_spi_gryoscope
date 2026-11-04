@@ -7,6 +7,7 @@
 
 use super::super::registers::magnetometer_registers::*;
 
+pub const MAG_SENSITIVITY: f32 = 1.5; // mgauss/LSB for ±50 gauss todo can move this or adjust in accel data let that handle instead.
 /// Magnetometer full-scale range selection and scaling factor.
 #[derive(Debug, Clone, Copy)]
 pub enum MagRange {

@@ -6,7 +6,7 @@
 //! It provides a convenient way to represent the acceleration values
 //! after converting from raw ADC readings using the appropriate scale factor
 //! based on the accelerometer's configuration.
-//!
+//! todo this class was not used yet.
 //! Copyright (c) 2026, Tan Dao.
 //! =====================================================================
 

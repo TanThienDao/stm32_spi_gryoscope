@@ -310,6 +310,9 @@ where
     /// Tuple of (x_raw, y_raw, z_raw) or error
     pub fn read_raw_data(&mut self) -> Result<(i16, i16, i16), &'static str> {
         // Auto-increment read starting from OUT_X_L (0x28)
+        // Bit 7 = 1 (read flag)
+        // Bit 6 = 1 (auto-increment flag for SPI)
+        // OxCO = 0b11000000
         // Buffer: [command_byte, x_l, x_h, y_l, y_h, z_l, z_h]
         let mut buffer = [
             OUT_X_L | 0xC0, // buffer[0]: Command (0x28 | 0xC0 = 0xE8)

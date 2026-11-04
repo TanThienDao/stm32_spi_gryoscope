@@ -10,8 +10,8 @@ use rtic::app;
 #[app(device = stm32f3_discovery::stm32f3xx_hal::pac, dispatchers = [EXTI0])]
 mod app {
     use crate::config::AppConfig;
-    use crate::log_warn;
-    use crate::{log_debug, log_info, log_init, log_stats};
+    use crate::logging::SensorPort;
+    use crate::{log_debug, log_info, log_init, log_sensor, log_stats, log_warn};
     use auxiliary::accelerometer_magnetometer_driver::driver::accel_config::{
         AccelConfig, AccelDataRate, AccelOperatingMode, AccelRange,
     };
@@ -38,6 +38,9 @@ mod app {
         /// Performane tracking for process_data task
         process_data_total_cycles: u32,
         process_data_count: u32,
+        /// Shared sensor data for accelerometer and magnetometer
+        sensor_data_accel: (f32, f32, f32),
+        sensor_data_mag: (f32, f32, f32),
     }
     /// Pre-task local resources (not shared)
     #[local]
@@ -53,6 +56,16 @@ mod app {
                 ),
             >,
             PE3<Output<PushPull>>,
+        >,
+        /// Local accelerometer and magnetometer driver instance
+        accel_mag_driver: Lsm303agr<
+            I2c<
+                pac::I2C1,
+                (
+                    PB6<Alternate<OpenDrain, 4>>,
+                    PB7<Alternate<OpenDrain, 4>>,
+                ),
+            >,
         >,
         /// Data consistent tracker
         prev_data: (f32, f32, f32),
@@ -218,7 +231,7 @@ mod app {
 
         // Step 1.2: Detect Magnetometer driver
         log_init!(itm, "Step 1.2: Detect Magnetometer driver...");
-        let mut accl_mag_driver = Lsm303agr::new(
+        let mut accel_mag_driver = Lsm303agr::new(
             i2c,
             AccelConfig::new(
                 AccelRange::G2,
@@ -231,7 +244,7 @@ mod app {
                 MagPowerMode::HighResolution,
             ),
         );
-        match accl_mag_driver.verify_device_identity() {
+        match accel_mag_driver.verify_device_identity() {
             Ok(id) => {
                 if id.0 == 0x33 && id.1 == 0x40 {
                     log_init!(itm, "✓ Accelerometer ID: 0x{:X} (LSM303AGR)", id.0);
@@ -283,7 +296,7 @@ mod app {
             itm,
             "Step 2.2: Init Accelerometer and Magnetometer driver..."
         );
-        if let Err(e) = accl_mag_driver.init() {
+        if let Err(e) = accel_mag_driver.init() {
             log_init!(
                 itm,
                 "✗ Error initializing Accelerometer and Magnetometer: {:?}",
@@ -321,11 +334,14 @@ mod app {
             process_data_total_cycles: 0,
             process_data_count: 0,
             itm,
+            sensor_data_accel: (0.0, 0.0, 0.0),
+            sensor_data_mag: (0.0, 0.0, 0.0),
         };
 
         // Initialize local resources
         let local = Local {
             gyro: gryo,
+            accel_mag_driver: accel_mag_driver,
             prev_data: (0.0, 0.0, 0.0),
             counter: 0,
             anomaly_counter: 0,
