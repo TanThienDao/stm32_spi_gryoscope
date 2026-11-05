@@ -71,7 +71,7 @@ impl<I2C> Lsm303agr<I2C> {
 
     /// Write to an accelerometer register.
     ///
-    ///   Description: In I2C communication, writing to a register typically involves sending
+    ///   Description In I2C communication, writing to a register typically involves sending
     ///      the register address followed by the data byte to the device.
     ///      This method encapsulates that process for the accelerometer.
     ///
@@ -92,10 +92,11 @@ impl<I2C> Lsm303agr<I2C> {
 
     /// Read from an accelerometer register.
     ///
-    ///     Description: In I2C communication, reading from a register typically
+    /// Description
+    ///     In I2C communication, reading from a register typically
     ///         involves first writing the register address to the device,
     ///         followed by reading the data from that register.
-    ///         This method encapsulates that process for the accelerometer.
+    ///     This method encapsulates that process for the accelerometer.
     ///     The method takes the register address to read from
     ///         and a mutable buffer to store the read data.
     ///
@@ -119,7 +120,8 @@ impl<I2C> Lsm303agr<I2C> {
 
     /// Write to a magnetometer register.
     ///
-    ///  Description: Similar above, but for the magnetometer.
+    ///  Description
+    ///      Similar above, but for the magnetometer.
     ///
     ///  Arguments:
     /// * `reg_address` - The address of the magnetometer register to write
@@ -139,7 +141,8 @@ impl<I2C> Lsm303agr<I2C> {
 
     /// Read from a magnetometer register.
     ///
-    /// Description: Similar above, but for the magnetometer.
+    /// Description
+    ///      Similar above, but for the magnetometer.
     ///
     /// Arguments:
     /// * `reg_address` - The address of the magnetometer register to read
@@ -161,7 +164,8 @@ impl<I2C> Lsm303agr<I2C> {
     }
     /// Read the WHO_AM_I_A register of the accelerometer to verify its identity.
     ///
-    /// Description: The WHO_AM_I register is a standard register in many sensors that contains
+    /// Description
+    ///  The WHO_AM_I register is a standard register in many sensors that contains
     /// a fixed value used to identify the device. This method reads that register from the
     /// accelerometer and returns its value.
     ///
@@ -181,8 +185,9 @@ impl<I2C> Lsm303agr<I2C> {
     }
     /// Read the WHO_AM_I_M register of the magnetometer to verify its identity.
     ///
-    /// Description: Similar to the accelerometer, this method reads the WHO_AM_I register
-    ///  from the magnetometer and returns its value.
+    /// Description
+    ///      Similar to the accelerometer, this method reads the WHO_AM_I register
+    ///     from the magnetometer and returns its value.
     ///     Expecting a specific value (e.g., 0x40 for LSM303AGR)
     ///     to confirm the device identity.
     /// Arguments:
@@ -202,7 +207,8 @@ impl<I2C> Lsm303agr<I2C> {
     /// Verify the identity of both the accelerometer and magnetometer by reading their WHO_AM_I
     /// register.
     ///
-    /// Description: This method reads the WHO_AM_I registers of both the accelerometer and
+    /// Description
+    /// This method reads the WHO_AM_I registers of both the accelerometer and
     /// magnetometer, compares the returned values to the expected values, and returns a tuple
     /// indicating whether each device's identity is verified.
     ///
@@ -250,7 +256,7 @@ impl<I2C> Lsm303agr<I2C> {
 
     /// Read raw accelerometer data from the LSM303AGR device.
     ///
-    /// Description:
+    /// Description
     ///     Read raw accelerometer data (6 bytes: X_L, X_H, Y_L, Y_H, Z_L, Z_H)
     ///                                          0x28|0x29|0x2A|0x2B|0x2C|0x2D
     ///     Uses auto-increment feature to read all axes in one I2C transaction.
@@ -342,7 +348,7 @@ impl<I2C> Lsm303agr<I2C> {
     /// Set the accelerometer range and update the configuration register.
     /// CTRL_REG4_A FULL_SCALE bits [5:4]
     ///
-    /// Description:
+    /// Description
     ///   G2 = ±2g, G4 = ±4g, G8 = ±8g, G16 = ±16g
     ///
     /// Arguments:
@@ -364,7 +370,7 @@ impl<I2C> Lsm303agr<I2C> {
     /// Set the accelerometer data rate and update the configuration register. (ODR)
     /// CTRL_REG1_A ODR bits.
     ///
-    /// Description:
+    /// Description
     ///     PowerDown, Hz1, Hz10, Hz25, Hz50, Hz100,
     ///     Hz200, Hz400, Hz1620(lower power), Hz5376 (lower power)
     ///
@@ -390,7 +396,7 @@ impl<I2C> Lsm303agr<I2C> {
     /// Set the accelerometer operating mode and update the configuration registers.
     /// CTRL_REG1_A and CTRL_REG4_A bits
     ///
-    /// Description:
+    /// Description
     ///   HighResolution, Normal, LowPower
     ///
     /// Arguments:
@@ -417,7 +423,7 @@ impl<I2C> Lsm303agr<I2C> {
     /// Set the magnetometer data rate and update the configuration register. (ODR)
     /// CFG_REG_A_M ODR bits [3:2]
     ///
-    /// Description:
+    /// Description
     ///    Hz10, Hz20, Hz50, Hz100
     ///
     /// Arguments:
@@ -443,7 +449,7 @@ impl<I2C> Lsm303agr<I2C> {
     /// Set the magnetometer operating mode and update the configuration register. (MD bits)
     /// CFG_REG_A_M MD bits [1:0]
     ///
-    /// Description:
+    /// Description
     ///   Continuous, Single, Idle
     ///
     /// Arguments:
@@ -468,7 +474,7 @@ impl<I2C> Lsm303agr<I2C> {
 
     /// Set the magnetometer power mode and update the configuration register. (Power Mode bits)
     /// CFG_REG_A_M LP bits 3
-    /// Description:
+    /// Description
     ///   HighResolution, LowPower
     /// Arguments:
     /// * `&mut self` - The mutable reference to the LSM303AGR driver

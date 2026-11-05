@@ -80,7 +80,8 @@ impl AccelOperatingMode {
 }
 /// Accelerometer output data rate selection
 ///
-/// Description: The output data rate (ODR) determines how frequently the accelerometer updates its
+/// Description
+///  The output data rate (ODR) determines how frequently the accelerometer updates its
 ///      data registers with new measurements. The LSM303AGR supports various ODR settings, which.
 ///      can be configured in CTRL_REG1_A. The ODR affects both the responsiveness of the sensor and
 ///      its power consumption.
