@@ -25,11 +25,9 @@ impl Tim2Guard {
             return Err("TIM2 already initialized");
         }
         let (psc, arr) = self.config.calculate_timer_values();
-        cortex_m::interrupt::free(|_| {
-            self.config_tim2(tim2, psc, arr);
-            self.initialized = true;
-            Ok(())
-        })
+        self.config_tim2(tim2, psc, arr)?;
+        self.initialized = true;
+        Ok(())
     }
 
     /// Configure TIM2 with calculated prescaler and auto-reload values.

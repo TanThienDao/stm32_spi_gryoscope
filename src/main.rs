@@ -3,6 +3,7 @@
 
 mod config;
 mod logging;
+mod critical_section_impl;
 use rtic::app;
 // ===== RTIC APP  =====
 
