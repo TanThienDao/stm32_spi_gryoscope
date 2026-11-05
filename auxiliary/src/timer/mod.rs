@@ -3,6 +3,7 @@
 //! Manager TIM2 configuration and interrupt handling
 
 pub mod tim2;
+mod timer_trait;
 
 /// Timer congiguration parameter
 #[derive(Debug, Clone, Copy)]
@@ -54,6 +55,7 @@ impl TimerConfig {
         Ok(())
     }
 
+    /// Calculate the prescaler (PSC) and auto-reload register (ARR) values for TIMX based on the configuration.
     pub fn calculate_timer_values(&self) -> (u16, u32) {
         // PSC (CPU_clock / (target_timer_freq)) - 1
         let psc = (self.cpu_clock_hz / self.target_timer_clock_hz) - 1;
