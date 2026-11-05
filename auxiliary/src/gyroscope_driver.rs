@@ -1,3 +1,4 @@
+//! =====================================================================
 //! Custom I3G4250D Driver
 //!
 //! This module provides direct SPI control over the I3G4250D gyroscope.
@@ -16,6 +17,9 @@
 //!     iprintln!(&mut itm.stim[0], "X: {:.2}°/s, Y: {:.2}°/s, Z: {:.2}°/s", x, y, z);
 //! }
 //! ```
+//!
+//! Copyright (c) 2026, Tan Dao.
+//! =====================================================================
 
 use embedded_hal::blocking::spi::Transfer;
 use embedded_hal::digital::v2::OutputPin;
@@ -63,19 +67,19 @@ pub const OUT_Z_H: u8 = 0x2D; // Z-axis high byte
 // DATA RATE OPTIONS (CTRL_REG1 bits 7-6)
 // =====================================================================
 
-pub const DR_100_HZ: u8 = 0b00 << 6;   // 100 Hz
-pub const DR_200_HZ: u8 = 0b01 << 6;  // 200 Hz
-pub const DR_400_HZ: u8 = 0b10 << 6;  // 400 Hz
-pub const DR_800_HZ: u8 = 0b11 << 6;  // 800 Hz
+pub const DR_100_HZ: u8 = 0b00 << 6; // 100 Hz
+pub const DR_200_HZ: u8 = 0b01 << 6; // 200 Hz
+pub const DR_400_HZ: u8 = 0b10 << 6; // 400 Hz
+pub const DR_800_HZ: u8 = 0b11 << 6; // 800 Hz
 
 // =====================================================================
 // FULL SCALE RANGE OPTIONS (CTRL_REG4 bits 5-4)
 // =====================================================================
 
-pub const FS_245_DPS: u8    = 0b00 << 4;    // 245 °/s,  scale: 8.75 mDPS/LSB
-pub const FS_500_DPS: u8    = 0b01 << 4;    // 500 °/s,  scale: 17.5 mDPS/LSB
-pub const FS_2000_DPS_1: u8 = 0b10 << 4;    // 2000 °/s, scale: 70 mDPS/LSB
-pub const FS_2000_DPS_2: u8 = 0b11 << 4;    // 2000 °/s, scale: 245 mDPS/LSB
+pub const FS_245_DPS: u8 = 0b00 << 4; // 245 °/s,  scale: 8.75 mDPS/LSB
+pub const FS_500_DPS: u8 = 0b01 << 4; // 500 °/s,  scale: 17.5 mDPS/LSB
+pub const FS_2000_DPS_1: u8 = 0b10 << 4; // 2000 °/s, scale: 70 mDPS/LSB
+pub const FS_2000_DPS_2: u8 = 0b11 << 4; // 2000 °/s, scale: 245 mDPS/LSB
 
 // =====================================================================
 // GYROSCOPE DRIVER STRUCT
@@ -91,7 +95,7 @@ pub const FS_2000_DPS_2: u8 = 0b11 << 4;    // 2000 °/s, scale: 245 mDPS/LSB
 pub struct GyroDriver<SPI, CS> {
     spi: SPI,
     cs: CS,
-    range: Range,  // Store for scaling factor
+    range: Range, // Store for scaling factor
 }
 
 /// Full-scale range selection and scaling factor
@@ -105,7 +109,6 @@ pub enum Range {
     DPS2000_1,
     /// 2000 °/s, scale factor: 70 mDPS/LSB
     DPS2000_2,
-
 }
 
 impl Range {
@@ -161,8 +164,8 @@ impl DataRate {
 
 impl<SPI, CS, E> GyroDriver<SPI, CS>
 where
-    SPI: Transfer<u8, Error = E>,       // SPI with unit error type
-    CS: OutputPin,                      // CS pin
+    SPI: Transfer<u8, Error = E>, // SPI with unit error type
+    CS: OutputPin,                // CS pin
 {
     /// Create a new gyroscope driver instance
     ///
@@ -176,7 +179,7 @@ where
         GyroDriver {
             spi,
             cs,
-            range: Range::DPS245,  // Default range
+            range: Range::DPS245, // Default range
         }
     }
 
@@ -190,14 +193,15 @@ where
     /// # Returns
     /// Register value or error
     fn read_register(&mut self, reg_addr: u8) -> Result<u8, &'static str> {
-        let mut buffer = [reg_addr | 0x80, 0x00];  // Set read bit (MSB = 1)
+        let mut buffer = [reg_addr | 0x80, 0x00]; // Set read bit (MSB = 1)
 
         self.cs.set_low().ok();
-        self.spi.transfer(&mut buffer)
+        self.spi
+            .transfer(&mut buffer)
             .map_err(|_| "SPI transfer failed")?;
         self.cs.set_high().ok();
 
-        Ok(buffer[1])  // Return received byte
+        Ok(buffer[1]) // Return received byte
     }
 
     /// Write a single register via SPI
@@ -211,10 +215,11 @@ where
     /// # Returns
     /// Ok(()) or error
     fn write_register(&mut self, reg_addr: u8, value: u8) -> Result<(), &'static str> {
-        let mut buffer = [reg_addr & 0x7F, value];  // Clear read bit (MSB = 0)
+        let mut buffer = [reg_addr & 0x7F, value]; // Clear read bit (MSB = 0)
 
         self.cs.set_low().ok();
-        self.spi.transfer(&mut buffer)
+        self.spi
+            .transfer(&mut buffer)
             .map_err(|_| "SPI transfer failed")?;
         self.cs.set_high().ok();
 
@@ -236,16 +241,16 @@ where
     ///
     /// # Returns
     /// Ok(()) or error
-    pub fn  init(&mut self) -> Result<(), &'static str> {
+    pub fn init(&mut self) -> Result<(), &'static str> {
         // CTRL_REG1: Power on (PD=1) + all axes enabled (Xen=Yen=Zen=1)
         // DR=400Hz (bits 7-6 = 10), BW bits 5-4 = 11
         // 400 Hz(ODR), Cutoff 110, all axes, normal mode 0b10111111
         //let ctrl_reg1 = 0xBF;
-        let ctrl_reg1 = 0x0F;  // 0b00001111
-        // Bit 3 (PD) = 1   → Normal mode
-        // Bits 2-0 = 111   → All axes enabled
-        // Bits 7-6 = 00    → 100 Hz (placeholder, will be set by set_data_rate())
-        // Bits 5-4 = 00    → Low BW (placeholder)
+        let ctrl_reg1 = 0x0F; // 0b00001111
+                              // Bit 3 (PD) = 1   → Normal mode
+                              // Bits 2-0 = 111   → All axes enabled
+                              // Bits 7-6 = 00    → 100 Hz (placeholder, will be set by set_data_rate())
+                              // Bits 5-4 = 00    → Low BW (placeholder)
         self.write_register(CTRL_REG1, ctrl_reg1)?;
 
         // CTRL_REG2: Disable high-pass filter
@@ -255,14 +260,13 @@ where
         self.write_register(CTRL_REG3, 0x00)?;
 
         // Also initialize CTRL_REG4 to little-endian, 245 DPS, 8.75 mDPS/LSB
-        let ctrl4 = 0x00;      // 0b00000000
-        // Bit 6 (BLE) = 0  → Little-endian
-        // Bits 5-4 = 00    → 245 DPS (placeholder, will be set by set_range())
+        let ctrl4 = 0x00; // 0b00000000
+                          // Bit 6 (BLE) = 0  → Little-endian
+                          // Bits 5-4 = 00    → 245 DPS (placeholder, will be set by set_range())
         self.write_register(CTRL_REG4, ctrl4)?;
 
         // CTRL_REG5: FIFO disabled, normal SPI
         self.write_register(CTRL_REG5, 0x00)?;
-
 
         Ok(())
     }
@@ -277,7 +281,7 @@ where
     /// Ok(()) or error
     pub fn set_data_rate(&mut self, rate: DataRate) -> Result<(), &'static str> {
         let current = self.read_register(CTRL_REG1)?;
-        let new_val = (current & 0x3F) | rate.ctrl_reg1_bits();  // Preserve bits [5:0]
+        let new_val = (current & 0x3F) | rate.ctrl_reg1_bits(); // Preserve bits [5:0]
         self.write_register(CTRL_REG1, new_val)
     }
 
@@ -291,7 +295,7 @@ where
     /// Ok(()) or error
     pub fn set_range(&mut self, range: Range) -> Result<(), &'static str> {
         let current = self.read_register(CTRL_REG4)?;
-        let new_val = (current & 0xCF) | range.ctrl_reg4_bits();  //0xCF 0b11001111 (keep bits 6,3-0)
+        let new_val = (current & 0xCF) | range.ctrl_reg4_bits(); //0xCF 0b11001111 (keep bits 6,3-0)
         self.write_register(CTRL_REG4, new_val)?;
         self.range = range;
         Ok(())
@@ -306,19 +310,23 @@ where
     /// Tuple of (x_raw, y_raw, z_raw) or error
     pub fn read_raw_data(&mut self) -> Result<(i16, i16, i16), &'static str> {
         // Auto-increment read starting from OUT_X_L (0x28)
+        // Bit 7 = 1 (read flag)
+        // Bit 6 = 1 (auto-increment flag for SPI)
+        // OxCO = 0b11000000
         // Buffer: [command_byte, x_l, x_h, y_l, y_h, z_l, z_h]
         let mut buffer = [
-            OUT_X_L | 0xC0,  // buffer[0]: Command (0x28 | 0xC0 = 0xE8)
-            0,               // buffer[1]: Will receive X_L
-            0,               // buffer[2]: Will receive X_H
-            0,               // buffer[3]: Will receive Y_L
-            0,               // buffer[4]: Will receive Y_H
-            0,               // buffer[5]: Will receive Z_L
-            0,               // buffer[6]: Will receive Z_H
+            OUT_X_L | 0xC0, // buffer[0]: Command (0x28 | 0xC0 = 0xE8)
+            0,              // buffer[1]: Will receive X_L
+            0,              // buffer[2]: Will receive X_H
+            0,              // buffer[3]: Will receive Y_L
+            0,              // buffer[4]: Will receive Y_H
+            0,              // buffer[5]: Will receive Z_L
+            0,              // buffer[6]: Will receive Z_H
         ];
 
         self.cs.set_low().ok();
-        self.spi.transfer(&mut buffer)
+        self.spi
+            .transfer(&mut buffer)
             .map_err(|_| "SPI transfer failed")?;
         self.cs.set_high().ok();
 
@@ -390,4 +398,3 @@ mod tests {
         assert_eq!(Range::DPS2000_2.ctrl_reg4_bits(), 0b11 << 4);
     }
 }
-

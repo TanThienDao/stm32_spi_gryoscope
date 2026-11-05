@@ -16,6 +16,7 @@ auxiliary = { path = "auxiliary" }
 stm32f3-discovery = "0.7.2"
 rtic = {version= "2.3.1", features = ["thumbv7-backend"] }
 cortex-m = "0.7.5"
+critical-section = { version = "1.2.0", features = ["restore-state-none"] }
 
 [profile.release]
 opt-level = 3

@@ -3,6 +3,38 @@
 
 use cortex_m::peripheral::DWT;
 
+/// Port of the logging module to the STM32F3 platform using ITM for output.
+/// Ports definition
+pub const ITM_PORT_GENERAL: usize = 0; // General logging port
+pub const ITM_PORT_GYRO: usize = 1; // Gyroscope-specific logging port
+pub const ITM_PORT_ACCEL: usize = 2; // Accelerometer-specific logging port
+pub const ITM_PORT_MAG: usize = 3; // Magnetometer-specific logging port
+
+/// Sensor port enum
+#[derive(Debug, Clone, Copy)]
+pub enum SensorPort {
+    Gyro,  // Port 1
+    Accel, // Port 2
+    Mag,   // Port 3
+}
+impl SensorPort {
+    /// Get the corresponding ITM port number for the sensor
+    pub fn to_itm_index_port(&self) -> usize {
+        match self {
+            SensorPort::Gyro => ITM_PORT_GYRO,
+            SensorPort::Accel => ITM_PORT_ACCEL,
+            SensorPort::Mag => ITM_PORT_MAG,
+        }
+    }
+    pub fn to_itm_label(&self) -> &'static str {
+        match self {
+            SensorPort::Gyro => "Gyro",
+            SensorPort::Accel => "Accel",
+            SensorPort::Mag => "Mag ",
+        }
+    }
+}
+
 /// Color codes for terminal output
 #[derive(Debug, Clone, Copy)]
 pub enum LogColor {
@@ -217,6 +249,29 @@ macro_rules! log_init {
                 format_args!($($arg)*),
                 $crate::logging::LogColor::reset()
             );
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! log_sensor {
+    ($cx:expr, $sensor_type:expr, $($arg:tt)*) => {
+        {
+            let (h, m, s, ms, us) = $crate::logging::format_timestamp();
+            let color = $crate::logging::LogColor::get_from_task("ReadSensor");
+            let padded_task = $crate::logging::get_padded_task("ReadSensor");
+            let sensor_label = $crate::logging::SensorPort::to_itm_label(&$sensor_type);
+            let sensor_port = $crate::logging::SensorPort::to_itm_index_port(&$sensor_type);
+            $cx.shared.itm.lock(|itm| {
+                iprintln!(
+                    &mut itm.stim[sensor_port],
+                    "{}[{:02}:{:02}:{:02}.{:03}.{:03}] - [{}] [{}] {}{}",
+                    color.to_ansi_code(), h, m, s, ms, us, padded_task,
+                    sensor_label,
+                    format_args!($($arg)*),
+                    $crate::logging::LogColor::reset()
+                );
+            });
         }
     };
 }

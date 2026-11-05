@@ -15,6 +15,7 @@ panic-halt = "1.0.0"
 stm32f3-discovery = "0.7.2"
 i3g4250d = "0.3.0"
 embedded-hal = "0.2.7"
+critical-section = { version = "1.2.0", features = ["restore-state-none"] }
 
 [dev-dependencies]
 embedded-hal = "0.2.7"

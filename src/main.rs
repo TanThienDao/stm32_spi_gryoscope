@@ -1,19 +1,27 @@
 #![no_main]
 #![no_std]
 
-mod logging;
 mod config;
+mod logging;
+mod critical_section_impl;
 use rtic::app;
 // ===== RTIC APP  =====
 
 /// Shared resources (protected by RTIC)
 #[app(device = stm32f3_discovery::stm32f3xx_hal::pac, dispatchers = [EXTI0])]
 mod app {
-    use crate::log_warn;
-    use crate::{log_debug, log_info, log_init, log_stats};
+    use crate::config::AppConfig;
+    use crate::logging::SensorPort;
+    use crate::{log_debug, log_info, log_init, log_sensor, log_stats, log_warn};
+    use auxiliary::accelerometer_magnetometer_driver::driver::accel_config::{
+        AccelConfig, AccelDataRate, AccelOperatingMode, AccelRange,
+    };
+    use auxiliary::accelerometer_magnetometer_driver::driver::accl_mag_driver::Lsm303agr;
+    use auxiliary::accelerometer_magnetometer_driver::driver::mag_config::{
+        MagConfig, MagDataRate, MagOperatingMode, MagPowerMode,
+    };
     use auxiliary::*;
     use rtic::Mutex;
-    use crate::config::AppConfig;
 
     // ===== SHARED RESOURCES =====
     /// Resources shared between tasks (protected by RTIC)
@@ -31,6 +39,9 @@ mod app {
         /// Performane tracking for process_data task
         process_data_total_cycles: u32,
         process_data_count: u32,
+        /// Shared sensor data for accelerometer and magnetometer
+        sensor_data_accel: (f32, f32, f32),
+        sensor_data_mag: (f32, f32, f32),
     }
     /// Pre-task local resources (not shared)
     #[local]
@@ -46,6 +57,16 @@ mod app {
                 ),
             >,
             PE3<Output<PushPull>>,
+        >,
+        /// Local accelerometer and magnetometer driver instance
+        accel_mag_driver: Lsm303agr<
+            I2c<
+                pac::I2C1,
+                (
+                    PB6<Alternate<OpenDrain, 4>>,
+                    PB7<Alternate<OpenDrain, 4>>,
+                ),
+            >,
         >,
         /// Data consistent tracker
         prev_data: (f32, f32, f32),
@@ -163,17 +184,35 @@ mod app {
             "=============================================================="
         );
 
-        log_init!(itm,"--------------------------------------------------------------");
+        log_init!(
+            itm,
+            "--------------------------------------------------------------"
+        );
         log_init!(itm, "📋 Configuration Loaded:");
-        log_init!(itm," Debug Logs: {}", AppConfig::DEBUG_ENABLED);
-        log_init!(itm," Stats Enabled: {}", AppConfig::STATS_ENABLED);
-        log_init!(itm," Max Angular Velocity Change: {}°/s", AppConfig::MAX_ANGULAR_VELOCITY_CHANGE);
-        log_init!(itm," Log Frequency: Every {} iterations", AppConfig::LOG_FREQUENCY);
-        log_init!(itm," Stats Interval: Every {} iterations", AppConfig::STATS_INTERVAL);
-        log_init!(itm,"--------------------------------------------------------------");
+        log_init!(itm, " Debug Logs: {}", AppConfig::DEBUG_ENABLED);
+        log_init!(itm, " Stats Enabled: {}", AppConfig::STATS_ENABLED);
+        log_init!(
+            itm,
+            " Max Angular Velocity Change: {}°/s",
+            AppConfig::MAX_ANGULAR_VELOCITY_CHANGE
+        );
+        log_init!(
+            itm,
+            " Log Frequency: Every {} iterations",
+            AppConfig::LOG_FREQUENCY
+        );
+        log_init!(
+            itm,
+            " Stats Interval: Every {} iterations",
+            AppConfig::STATS_INTERVAL
+        );
+        log_init!(
+            itm,
+            "--------------------------------------------------------------"
+        );
 
-        // Step 1: Detect Gyro driver
-        log_init!(itm, "Step 1: Detect Gyro driver...");
+        // Step 1.1: Detect Gyro driver
+        log_init!(itm, "Step 1.1: Detect Gyro driver...");
         let mut gryo = GyroDriver::new(spi, cs);
         log_init!(itm, "✓ Gyro driver initialized.");
         match gryo.who_am_i() {
@@ -191,8 +230,45 @@ mod app {
             }
         }
 
-        // Step 2: Initialize Gyro driver
-        log_init!(itm, "Step 2: Init Gyro driver...");
+        // Step 1.2: Detect Magnetometer driver
+        log_init!(itm, "Step 1.2: Detect Magnetometer driver...");
+        let mut accel_mag_driver = Lsm303agr::new(
+            i2c,
+            AccelConfig::new(
+                AccelRange::G2,
+                AccelOperatingMode::HighResolution,
+                AccelDataRate::Hz100,
+            ),
+            MagConfig::new(
+                MagOperatingMode::Continuous,
+                MagDataRate::Hz100,
+                MagPowerMode::HighResolution,
+            ),
+        );
+        match accel_mag_driver.verify_device_identity() {
+            Ok(id) => {
+                if id.0 == 0x33 && id.1 == 0x40 {
+                    log_init!(itm, "✓ Accelerometer ID: 0x{:X} (LSM303AGR)", id.0);
+                    log_init!(itm, "✓ Magnetometer ID: 0x{:X} (LSM303AGR)", id.1);
+                } else {
+                    log_init!(
+                        itm,
+                        "✗ Unexpected Magnetometer ID: 0x{:X} and 0x{:X}",
+                        id.0,
+                        id.1
+                    );
+                    loop {}
+                }
+            }
+            Err(_) => {
+                log_init!(itm, "✗ Error reading Magnetometer ID!");
+                loop {}
+            }
+        }
+        log_init!(itm, "");
+
+        // Step 2.1: Initialize Gyro driver
+        log_init!(itm, "Step 2.1: Init Gyro driver...");
         // Initialize the gyro
         if let Err(e) = gryo.init() {
             log_init!(itm, "✗ Error initializing Gyro: {:?}", e);
@@ -200,8 +276,8 @@ mod app {
         }
         log_init!(itm, "✓ Gyro driver initialized.");
 
-        // Step 3: Configure Gyro
-        log_init!(itm, "Step 3: Configuring Gyro...");
+        //Configure Gyro
+        log_init!(itm, " Configuring Gyro...");
         if let Err(e) = gryo.set_data_rate(DataRate::Hz400) {
             log_init!(itm, "✗ Error setting data rate: {:?}", e);
             loop {}
@@ -210,10 +286,32 @@ mod app {
             log_init!(itm, "✗ Error setting range: {:?}", e);
             loop {}
         }
-        log_init!(itm, "✓ Gyro configured).");
-        log_init!(itm, "✓ Configuration complete:");
+        log_init!(itm, "✓ Gyro configured.");
+        log_init!(itm, "✓ Configuration Gyroscope complete:");
         log_init!(itm, "  - Data Rate: 400 Hz (timer interrupt)");
         log_init!(itm, "  - Range: 500 °/s");
+        log_init!(itm, "");
+
+        // Step 2.2: Initialize Accelerometer and Magnetometer driver
+        log_init!(
+            itm,
+            "Step 2.2: Init Accelerometer and Magnetometer driver..."
+        );
+        if let Err(e) = accel_mag_driver.init() {
+            log_init!(
+                itm,
+                "✗ Error initializing Accelerometer and Magnetometer: {:?}",
+                e
+            );
+            loop {}
+        }
+        log_init!(itm, "✓ Accelerometer and Magnetometer driver initialized.");
+        log_init!(
+            itm,
+            "✓ Configuration Accelerometer and Magnetometer complete:"
+        );
+        log_init!(itm, "  - Accelerometer: ±2g, High-Resolution, 100 Hz");
+        log_init!(itm, "  - Magnetometer: Continuous, 100 Hz, High-Resolution");
         log_init!(itm, "");
 
         log_init!(
@@ -221,6 +319,7 @@ mod app {
             "Enabling DWT cycle counter for performance measurement..."
         );
         dwt.enable_cycle_counter();
+        log_init!(itm, "");
 
         log_init!(itm, "✓ RTIC system ready. Starting main loop...");
         log_init!(
@@ -236,11 +335,14 @@ mod app {
             process_data_total_cycles: 0,
             process_data_count: 0,
             itm,
+            sensor_data_accel: (0.0, 0.0, 0.0),
+            sensor_data_mag: (0.0, 0.0, 0.0),
         };
 
         // Initialize local resources
         let local = Local {
             gyro: gryo,
+            accel_mag_driver: accel_mag_driver,
             prev_data: (0.0, 0.0, 0.0),
             counter: 0,
             anomaly_counter: 0,
@@ -274,7 +376,11 @@ mod app {
     local = [gyro])]
     fn read_sensor(mut cx: read_sensor::Context) {
         if AppConfig::DEBUG_ENABLED {
-            log_debug!(cx, "ReadSensor", "TIM2 interrupt fired, reading sensor data...");
+            log_debug!(
+                cx,
+                "ReadSensor",
+                "TIM2 interrupt fired, reading sensor data..."
+            );
         }
         let start = DWT::cycle_count();
         // Clear the update interrupt flag (UIF) for TIM2 to acknowledge the interrupt
