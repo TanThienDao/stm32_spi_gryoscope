@@ -4,6 +4,22 @@
 mod logging;
 
 use rtic::app;
+
+// Critical section implementation for embedded environment
+#[no_mangle]
+unsafe extern "C" fn _critical_section_1_0_acquire() -> u32 {
+    let was_enabled = !cortex_m::register::primask::read().is_active();
+    cortex_m::interrupt::disable();
+    was_enabled as u32
+}
+
+#[no_mangle]
+unsafe extern "C" fn _critical_section_1_0_release(token: u32) {
+    if token != 0 {
+        cortex_m::interrupt::enable()
+    }
+}
+
 // ===== RTIC APP  =====
 
 /// Shared resources (protected by RTIC)
@@ -240,7 +256,8 @@ mod app {
             });
 
             // Spawn the process_data task to handle the new data
-            process_data::spawn().unwrap();
+            // COMMENTED OUT: Testing if spawn queue is causing interrupt masking
+            // let _ = process_data::spawn();
         }
 
         // Measure performance of read_sensor task
