@@ -255,9 +255,16 @@ mod app {
                 *ready = true;
             });
 
-            // Spawn the process_data task to handle the new data
-            // COMMENTED OUT: Testing if spawn queue is causing interrupt masking
-            // let _ = process_data::spawn();
+            // Log data directly (no spawning to avoid queue overflow)
+            static mut LOG_COUNT: u32 = 0;
+            unsafe {
+                LOG_COUNT += 1;
+                if LOG_COUNT % 4 == 0 {
+                    log_info!(cx, "Sensor", "X: {:7.2}°/s | Y: {:7.2}°/s | Z: {:7.2}°/s", x, y, z);
+                }
+            }
+
+            // DO NOT spawn process_data - it causes interrupt blocking when queue fills
         }
 
         // Measure performance of read_sensor task
