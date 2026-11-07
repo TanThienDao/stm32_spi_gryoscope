@@ -8,7 +8,7 @@ use rtic::app;
 // ===== RTIC APP  =====
 
 /// Shared resources (protected by RTIC)
-#[app(device = stm32f3_discovery::stm32f3xx_hal::pac, dispatchers = [EXTI0])]
+#[app(device = stm32f3_discovery::stm32f3xx_hal::pac, dispatchers = [EXTI0, EXTI1, EXTI4, EXTI9_5])]
 mod app {
     use crate::config::AppConfig;
     use crate::logging::SensorPort;
@@ -398,8 +398,19 @@ mod app {
             });
 
             // Spawn the process_data task to handle the new data
-            process_data::spawn().unwrap();
+            //todo this process_data task is not longer work because stack over flow ?
+            match process_data::spawn() {
+                Ok(_) => {
+                    if AppConfig::DEBUG_ENABLED {
+                        log_debug!(cx, "ReadSensor", "process_data spawned successfully");
+                    }
+                }
+                Err(_) => {
+                    log_warn!(cx, "ReadSensor", "❌ FAILED to spawn process_data! Task queue may be full.");
+                }
+            }
         }
+
 
         // Measure performance of read_sensor task
         let end = DWT::cycle_count();
@@ -422,6 +433,7 @@ mod app {
     itm],
     local = [ prev_data, counter, anomaly_counter])]
     async fn process_data(mut cx: process_data::Context) {
+        log_info!(cx, "ProcessData", "🔵 process_data ENTERED");
         let start = DWT::cycle_count();
         // Access shared and local resources
         let prev_data = cx.local.prev_data;
