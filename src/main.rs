@@ -375,6 +375,7 @@ mod app {
     shared = [sensor_data, new_data_ready, read_sensor_total_cycles, read_sensor_count,itm],
     local = [gyro])]
     fn read_sensor(mut cx: read_sensor::Context) {
+        log_info!(cx, "ReadSensor", "🔴 TIM2 interrupt fired!");
         if AppConfig::DEBUG_ENABLED {
             log_debug!(
                 cx,
@@ -389,6 +390,7 @@ mod app {
         let gyro = cx.local.gyro;
         // Update shared resources with new sensor data
         if let Ok((x, y, z)) = gyro.read_angular_velocity() {
+            log_info!(cx, "ReadSensor", "✓ Read sensor data: X:{:.2} Y:{:.2} Z:{:.2}", x, y, z);
             // Update shared resources
             cx.shared.sensor_data.lock(|data| {
                 *data = (x, y, z);

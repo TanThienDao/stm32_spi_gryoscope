@@ -193,7 +193,8 @@ where
 /// Sets tim2
 pub fn init_time2(dp: &mut pac::Peripherals) -> Result<(), &'static str> {
     // Initialize TIM2 for interrupt-driven updates
-    let tim2_config = timer::TimerConfig::new(100_000, 100);
+    // Must match gyroscope data rate: 400 Hz (see gryo.set_data_rate(DataRate::Hz400))
+    let tim2_config = timer::TimerConfig::new(100_000, 400);
     let mut tim2 = timer::tim2::Tim2Guard::new(tim2_config).unwrap();
     tim2.init(&mut dp.TIM2)?;
     Ok(())

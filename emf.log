@@ -1,38 +1,37 @@
-[34m[00:00:06.376.040] - [Init        ] [Info ] ==============================================================[0m
-[34m[00:00:06.377.041] - [Init        ] [Info ] Phase 3: RTIC-based I3G4250D Gyroscope[0m
-[34m[00:00:06.377.041] - [Init        ] [Info ] ==============================================================[0m
-[34m[00:00:06.377.041] - [Init        ] [Info ] --------------------------------------------------------------[0m
-[34m[00:00:06.377.041] - [Init        ] [Info ] 📋 Configuration Loaded:[0m
-[34m[00:00:06.377.041] - [Init        ] [Info ]  Debug Logs: false[0m
-[34m[00:00:06.377.041] - [Init        ] [Info ]  Stats Enabled: true[0m
-[34m[00:00:06.377.041] - [Init        ] [Info ]  Max Angular Velocity Change: 100°/s[0m
-[34m[00:00:06.377.041] - [Init        ] [Info ]  Log Frequency: Every 4 iterations[0m
-[34m[00:00:06.377.041] - [Init        ] [Info ]  Stats Interval: Every 1000 iterations[0m
-[34m[00:00:06.377.041] - [Init        ] [Info ] --------------------------------------------------------------[0m
-[34m[00:00:06.377.041] - [Init        ] [Info ] Step 1.1: Detect Gyro driver...[0m
-[34m[00:00:06.377.041] - [Init        ] [Info ] ✓ Gyro driver initialized.[0m
-[34m[00:00:06.378.042] - [Init        ] [Info ] ✓ Gyro ID: 0xD3 (I3G4250D)[0m
-[34m[00:00:06.378.042] - [Init        ] [Info ] Step 1.2: Detect Magnetometer driver...[0m
-[34m[00:00:06.378.042] - [Init        ] [Info ] ✓ Accelerometer ID: 0x33 (LSM303AGR)[0m
-[34m[00:00:06.378.042] - [Init        ] [Info ] ✓ Magnetometer ID: 0x40 (LSM303AGR)[0m
-[34m[00:00:06.378.042] - [Init        ] [Info ] [0m
-[34m[00:00:06.378.042] - [Init        ] [Info ] Step 2.1: Init Gyro driver...[0m
-[34m[00:00:06.378.042] - [Init        ] [Info ] ✓ Gyro driver initialized.[0m
-[34m[00:00:06.378.042] - [Init        ] [Info ]  Configuring Gyro...[0m
-[34m[00:00:06.378.042] - [Init        ] [Info ] ✓ Gyro configured.[0m
-[34m[00:00:06.378.042] - [Init        ] [Info ] ✓ Configuration Gyroscope complete:[0m
-[34m[00:00:06.378.042] - [Init        ] [Info ]   - Data Rate: 400 Hz (timer interrupt)[0m
-[34m[00:00:06.378.042] - [Init        ] [Info ]   - Range: 500 °/s[0m
-[34m[00:00:06.379.043] - [Init        ] [Info ] [0m
-[34m[00:00:06.379.043] - [Init        ] [Info ] Step 2.2: Init Accelerometer and Magnetometer driver...[0m
-[34m[00:00:06.379.043] - [Init        ] [Info ] ✓ Accelerometer and Magnetometer driver initialized.[0m
-[34m[00:00:06.379.043] - [Init        ] [Info ] ✓ Configuration Accelerometer and Magnetometer complete:[0m
-[34m[00:00:06.379.043] - [Init        ] [Info ]   - Accelerometer: ±2g, High-Resolution, 100 Hz[0m
-[34m[00:00:06.379.043] - [Init        ] [Info ]   - Magnetometer: Continuous, 100 Hz, High-Resolution[0m
-[34m[00:00:06.379.043] - [Init        ] [Info ] [0m
-[34m[00:00:06.379.043] - [Init        ] [Info ] Enabling DWT cycle counter for performance measurement...[0m
-[34m[00:00:06.379.043] - [Init        ] [Info ] [0m
-[34m[00:00:06.379.043] - [Init        ] [Info ] ✓ RTIC system ready. Starting main loop...[0m
-[34m[00:00:06.379.043] - [Init        ] [Info ] ==============================================================[0m
-[32;1m[00:00:06.380.044] - [ReadSensor  ] [INFO ] X:    0.61°/s | Y:   -0.46°/s | Z:   -0.19°/s[0m
-[33;1m[00:00:06.380.044] - [Idle        ] [INFO ] Waiting for new data...[0m
+[34m[00:00:39.476.020] - [Init        ] [Info ] ==============================================================[0m
+[34m[00:00:39.476.020] - [Init        ] [Info ] Phase 3: RTIC-based I3G4250D Gyroscope[0m
+[34m[00:00:39.476.020] - [Init        ] [Info ] ==============================================================[0m
+[34m[00:00:39.476.020] - [Init        ] [Info ] --------------------------------------------------------------[0m
+[34m[00:00:39.476.020] - [Init        ] [Info ] 📋 Configuration Loaded:[0m
+[34m[00:00:39.476.020] - [Init        ] [Info ]  Debug Logs: false[0m
+[34m[00:00:39.476.020] - [Init        ] [Info ]  Stats Enabled: true[0m
+[34m[00:00:39.477.021] - [Init        ] [Info ]  Max Angular Velocity Change: 100°/s[0m
+[34m[00:00:39.477.021] - [Init        ] [Info ]  Log Frequency: Every 4 iterations[0m
+[34m[00:00:39.477.021] - [Init        ] [Info ]  Stats Interval: Every 1000 iterations[0m
+[34m[00:00:39.477.021] - [Init        ] [Info ] --------------------------------------------------------------[0m
+[34m[00:00:39.477.021] - [Init        ] [Info ] Step 1.1: Detect Gyro driver...[0m
+[34m[00:00:39.477.021] - [Init        ] [Info ] ✓ Gyro driver initialized.[0m
+[34m[00:00:39.477.021] - [Init        ] [Info ] ✓ Gyro ID: 0xD3 (I3G4250D)[0m
+[34m[00:00:39.477.021] - [Init        ] [Info ] Step 1.2: Detect Magnetometer driver...[0m
+[34m[00:00:39.477.021] - [Init        ] [Info ] ✓ Accelerometer ID: 0x33 (LSM303AGR)[0m
+[34m[00:00:39.477.021] - [Init        ] [Info ] ✓ Magnetometer ID: 0x40 (LSM303AGR)[0m
+[34m[00:00:39.477.021] - [Init        ] [Info ] [0m
+[34m[00:00:39.477.021] - [Init        ] [Info ] Step 2.1: Init Gyro driver...[0m
+[34m[00:00:39.478.022] - [Init        ] [Info ] ✓ Gyro driver initialized.[0m
+[34m[00:00:39.478.022] - [Init        ] [Info ]  Configuring Gyro...[0m
+[34m[00:00:39.478.022] - [Init        ] [Info ] ✓ Gyro configured.[0m
+[34m[00:00:39.478.022] - [Init        ] [Info ] ✓ Configuration Gyroscope complete:[0m
+[34m[00:00:39.478.022] - [Init        ] [Info ]   - Data Rate: 400 Hz (timer interrupt)[0m
+[34m[00:00:39.478.022] - [Init        ] [Info ]   - Range: 500 °/s[0m
+[34m[00:00:39.478.022] - [Init        ] [Info ] [0m
+[34m[00:00:39.478.022] - [Init        ] [Info ] Step 2.2: Init Accelerometer and Magnetometer driver...[0m
+[34m[00:00:39.478.022] - [Init        ] [Info ] ✓ Accelerometer and Magnetometer driver initialized.[0m
+[34m[00:00:39.478.022] - [Init        ] [Info ] ✓ Configuration Accelerometer and Magnetometer complete:[0m
+[34m[00:00:39.478.022] - [Init        ] [Info ]   - Accelerometer: ±2g, High-Resolution, 100 Hz[0m
+[34m[00:00:39.478.022] - [Init        ] [Info ]   - Magnetometer: Continuous, 100 Hz, High-Resolution[0m
+[34m[00:00:39.479.023] - [Init        ] [Info ] [0m
+[34m[00:00:39.479.023] - [Init        ] [Info ] Enabling DWT cycle counter for performance measurement...[0m
+[34m[00:00:39.479.023] - [Init        ] [Info ] [0m
+[34m[00:00:39.479.023] - [Init        ] [Info ] ✓ RTIC system ready. Starting main loop...[0m
+[34m[00:00:39.479.023] - [Init        ] [Info ] ==============================================================[0m
+[33;1m[00:00:39.479.023] - [Idle        ] [INFO ] Waiting for new data...[0m
