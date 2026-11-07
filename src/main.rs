@@ -222,13 +222,38 @@ mod app {
     // ===== IDLE TASK (LOW PRIORITY) =====
     /// Idle loop (lowest priority) for processing data
     /// Spawned process_data task when interrupt fires
-    #[idle(shared = [itm])]
+    #[idle(shared = [itm,new_data_ready])]
     fn idle(mut cx: idle::Context) -> ! {
         //Main loop: Process data (lower priority)
         //sleeps when nothing to do
         log_info!(cx, "Idle", "Waiting for new data...");
         loop {
-            asm::wfi();
+            //asm::wfi();
+            // Check if new sensor data is ready
+            let should_process = cx.shared.new_data_ready.lock(|ready| {
+                if *ready {
+                    *ready = false;  // Reset flag
+                    true
+                } else {
+                    false
+                }
+            });
+
+            // Spawn process_data task if data is ready
+            if should_process {
+                log_info!(cx, "Idle", "Spawning process_data");  // ← Add this
+                //let _ = process_data::spawn().unwrap();
+            }
+
+            let mut idle_counter: u32 = 0;
+            idle_counter += 1;
+            if idle_counter % 1_000_000 == 0 {
+                log_info!(cx, "Idle", "Idle loop running... counter={}", idle_counter);  // ← Add this
+            }
+
+
+            // Optional: Yield to let other tasks run
+            cortex_m::asm::wfi();
         }
     }
 
@@ -254,16 +279,7 @@ mod app {
             cx.shared.new_data_ready.lock(|ready| {
                 *ready = true;
             });
-
-            // Log data directly (no spawning to avoid queue overflow)
-            static mut LOG_COUNT: u32 = 0;
-            unsafe {
-                LOG_COUNT += 1;
-                if LOG_COUNT % 4 == 0 {
-                    log_info!(cx, "Sensor", "X: {:7.2}°/s | Y: {:7.2}°/s | Z: {:7.2}°/s", x, y, z);
-                }
-            }
-
+            log_info!(cx, "ReadSensor", "X: {:7.2}°/s | Y: {:7.2}°/s | Z: {:7.2}°/s", x, y, z);
             // DO NOT spawn process_data - it causes interrupt blocking when queue fills
         }
 
@@ -288,15 +304,16 @@ mod app {
     itm],
     local = [ prev_data, counter, anomaly_counter])]
     async fn process_data(mut cx: process_data::Context) {
+        log_info!(cx, "ProcessData", "STARTED");
         let start = DWT::cycle_count();
         // Access shared and local resources
         let prev_data = cx.local.prev_data;
         let counter = cx.local.counter;
         let anomaly_counter = cx.local.anomaly_counter;
         const MAX_DELTA: f32 = 100.0; // Maximum allowed change in angular velocity
-
+        log_info!(cx, "ProcessData", "Waiting for new data...");
         // Check if new data is ready
-        let has_data = cx.shared.new_data_ready.lock(|ready| {
+       /* let has_data = cx.shared.new_data_ready.lock(|ready| {
             if *ready {
                 *ready = false;
                 true
@@ -306,7 +323,7 @@ mod app {
         });
         if !has_data {
             return;
-        }
+        }*/
 
         // Read the latest sensor data
         let (x, y, z) = cx.shared.sensor_data.lock(|data| *data);
