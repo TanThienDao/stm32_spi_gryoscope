@@ -37,10 +37,7 @@ impl Tim2Guard {
         tim2.psc.write(|w| w.psc().bits(psc));
         //Step 2: Set ARR: Auto-reload register (defines the period of the timer)
         tim2.arr.write(|w| w.arr().bits(arr));
-        //Step 3: Generate an update event to force shadow registers to load
-        // CRITICAL: PSC and ARR are shadow registers - they need an update event to take effect!
-        tim2.egr.write(|w| w.ug().set_bit());
-        //Step 4: Enable counter and update event generation
+        //Step 3: Enable counter and update event generation
         tim2.cr1.write(|w| {
             w
                 .cen().set_bit() // Counter enabled
@@ -48,7 +45,7 @@ impl Tim2Guard {
                 .dir().clear_bit() // Count up
                 .arpe().clear_bit() // Auto-reload preload disabled
         });
-        //Step 5: Enable TIM2 interrupt on update event (UIE)
+        //Step 4: Enable TIM2 interrupt on update event (UIE)
         tim2.dier.write(|w| w.uie().set_bit());
         Ok(())
     }

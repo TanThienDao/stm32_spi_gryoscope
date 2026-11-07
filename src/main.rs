@@ -402,7 +402,7 @@ mod app {
             // Spawn the process_data task to handle the new data
             //todo this process_data task is not longer work because stack over flow ?
             log_info!(cx, "ReadSensor", "📤 About to spawn process_data...");
-            match process_data::spawn() {
+            match task1::spawn() {
                 Ok(_) => {
                     log_info!(cx, "ReadSensor", "✅ process_data spawned successfully");
                     if AppConfig::DEBUG_ENABLED {
@@ -428,6 +428,12 @@ mod app {
             *count += 1;
         });
         log_info!(cx, "ReadSensor", "✅ read_sensor task complete, cycles: {}", elapsed);
+    }
+
+    // TEST TASK - Diagnose software task spawning issue
+    #[task(priority = 2, shared = [itm])]
+    async fn task1(mut cx: task1::Context) {
+        log_info!(cx, "TASK1", "🟢 TASK1 EXECUTED - Entered task1!");
     }
 
     ///Main processing loop (lower priority than interrupt)
