@@ -4,20 +4,21 @@
 extern crate panic_itm;
 
 pub use cortex_m::{
-    self,
-    asm, iprint, iprintln,
-    peripheral::{Peripherals, DWT, ITM, NVIC, SYST}
+    self, asm, iprint, iprintln,
+    peripheral::{Peripherals, DWT, ITM, NVIC, SYST},
 };
 pub use cortex_m_rt::entry;
 use embedded_hal::blocking::spi::Transfer;
 use embedded_hal::digital::v2::OutputPin;
 pub use stm32f3_discovery::stm32f3xx_hal::{
     delay::Delay,
-    interrupt::{self},
-    pac::{self, SPI1, TIM2},
-    gpio::{AF5, Alternate, Output, PushPull},
     gpio::gpioa::{PA5, PA6, PA7},
     gpio::gpioe::PE3,
+    gpio::gpiob::{PB6, PB7},
+    gpio::{Alternate, Output, PushPull, AF5,OpenDrain,AF4},
+    i2c::I2c,
+    interrupt::{self},
+    pac::{self, SPI1, TIM2},
     prelude::*,
     spi::{MisoPin, Mode, MosiPin, Phase, Polarity, SckPin, Spi},
     time::rate::Hertz,
@@ -28,10 +29,11 @@ pub mod gyroscope_driver;
 pub use gyroscope_driver::{DataRate, GyroDriver, Range};
 
 // Interrupt handler module for Phase 2
-pub mod interrupt_handler;
+//pub mod interrupt_handler;
 pub mod timer;
-pub mod nvic;
+//pub mod nvic;
 
+pub mod accelerometer_magnetometer_driver;
 pub fn init() -> (
     ITM,
     Delay,
@@ -102,7 +104,7 @@ pub fn init() -> (
     let mut tim2 = timer::tim2::Tim2Guard::new(tim2_config).unwrap();
     tim2.init(&mut dp.TIM2).unwrap();
 
-    (cp.ITM, delay, spi, cs,dwt)
+    (cp.ITM, delay, spi, cs, dwt)
 }
 pub fn identify_gryoscope<PINS, CS>(
     spi: &mut Spi<SPI1, PINS>,

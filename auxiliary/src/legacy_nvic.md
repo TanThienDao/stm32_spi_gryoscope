@@ -1,3 +1,4 @@
+```rust
 //! NVIC (Nested Vectored Interrupt Controller) management for Cortex-M microcontrollers.
 //! 
 //! Ensure safe interrupt unmasking
@@ -31,3 +32,5 @@ impl NvicGuard {
         self.is_tim2_unmasked
     }
 }
+
+```

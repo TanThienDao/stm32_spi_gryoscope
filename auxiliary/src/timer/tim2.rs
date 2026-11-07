@@ -1,10 +1,7 @@
 //! TIM2 specific timer implement
 
-use super::{
-    TimerConfig,
-    TimerResult,
-};
-use crate::pac::{self,TIM2};
+use super::{TimerConfig, TimerResult};
+use crate::pac::{self, TIM2};
 
 /// TIM2 timer group for STM32F3 series microcontrollers.
 pub struct Tim2Guard {
@@ -28,11 +25,9 @@ impl Tim2Guard {
             return Err("TIM2 already initialized");
         }
         let (psc, arr) = self.config.calculate_timer_values();
-        cortex_m::interrupt::free(|_| {
-            self.config_tim2(tim2, psc, arr);
-            self.initialized = true;
-            Ok(())
-        })
+        self.config_tim2(tim2, psc, arr)?;
+        self.initialized = true;
+        Ok(())
     }
 
     /// Configure TIM2 with calculated prescaler and auto-reload values.
@@ -44,10 +39,14 @@ impl Tim2Guard {
         tim2.arr.write(|w| w.arr().bits(arr));
         //Step 3: Enable counter and update event generation
         tim2.cr1.write(|w| {
-            w.cen().set_bit()         // Counter enabled
-                .udis().clear_bit()          // Update event enabled
-                .dir().clear_bit()           // Count up
-                .arpe().clear_bit()                  // Auto-reload preload disabled
+            w.cen()
+                .set_bit() // Counter enabled
+                .udis()
+                .clear_bit() // Update event enabled
+                .dir()
+                .clear_bit() // Count up
+                .arpe()
+                .clear_bit() // Auto-reload preload disabled
         });
         //Step 4: Enable TIM2 interrupt on update event (UIE)
         tim2.dier.write(|w| w.uie().set_bit());

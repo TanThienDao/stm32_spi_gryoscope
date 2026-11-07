@@ -39,6 +39,7 @@ Cargo.lock
 .idea/**/contentModel.xml
 
 # Sensitive or high-churn files
+.idea
 .idea/**/dataSources/
 .idea/**/dataSources.ids
 .idea/**/dataSources.local.xml
@@ -101,4 +102,7 @@ fabric.properties
 .idea/caches/build_file_checksums.ser
 
 *.log
+
+Cargo.lock
+auxiliary/Cargo.lock
 
