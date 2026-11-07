@@ -401,8 +401,10 @@ mod app {
 
             // Spawn the process_data task to handle the new data
             //todo this process_data task is not longer work because stack over flow ?
+            log_info!(cx, "ReadSensor", "📤 About to spawn process_data...");
             match process_data::spawn() {
                 Ok(_) => {
+                    log_info!(cx, "ReadSensor", "✅ process_data spawned successfully");
                     if AppConfig::DEBUG_ENABLED {
                         log_debug!(cx, "ReadSensor", "process_data spawned successfully");
                     }
@@ -411,10 +413,12 @@ mod app {
                     log_warn!(cx, "ReadSensor", "❌ FAILED to spawn process_data! Task queue may be full.");
                 }
             }
+            log_info!(cx, "ReadSensor", "✅ Spawn attempt complete, returning from interrupt");
         }
 
 
         // Measure performance of read_sensor task
+        log_info!(cx, "ReadSensor", "⏱️  Measuring performance...");
         let end = DWT::cycle_count();
         let elapsed = end.wrapping_sub(start) as u32;
         cx.shared.read_sensor_total_cycles.lock(|total| {
@@ -423,6 +427,7 @@ mod app {
         cx.shared.read_sensor_count.lock(|count| {
             *count += 1;
         });
+        log_info!(cx, "ReadSensor", "✅ read_sensor task complete, cycles: {}", elapsed);
     }
 
     ///Main processing loop (lower priority than interrupt)
