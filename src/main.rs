@@ -440,15 +440,17 @@ mod app {
     itm],
     local = [ prev_data, counter, anomaly_counter])]
     async fn process_data(mut cx: process_data::Context) {
-        log_info!(cx, "ProcessData", "🔵 process_data ENTERED");
+        log_info!(cx, "ProcessData", "🔵 process_data ENTERED - task is executing!");
         let start = DWT::cycle_count();
+        
         // Access shared and local resources
         let prev_data = cx.local.prev_data;
         let counter = cx.local.counter;
         let anomaly_counter = cx.local.anomaly_counter;
-        const MAX_DELTA: f32 = AppConfig::MAX_ANGULAR_VELOCITY_CHANGE; // Maximum allowed change in angular velocity
+        const MAX_DELTA: f32 = AppConfig::MAX_ANGULAR_VELOCITY_CHANGE;
 
         // Check if new data is ready
+        log_info!(cx, "ProcessData", "📥 Checking if new data is ready...");
         let has_data = cx.shared.new_data_ready.lock(|ready| {
             if *ready {
                 *ready = false;
@@ -457,7 +459,9 @@ mod app {
                 false
             }
         });
+        log_info!(cx, "ProcessData", "📥 has_data={}", has_data);
         if !has_data {
+            log_info!(cx, "ProcessData", "⏭️  No new data, skipping processing");
             return;
         }
 

@@ -113,3 +113,47 @@
 [32;1m[00:00:46.140.060] - [ReadSensor  ] [INFO ] 🔴 TIM2 interrupt fired![0m
 [32;1m[00:00:46.141.061] - [ReadSensor  ] [INFO ] ✓ Read sensor data: X:0.25 Y:0.38 Z:-1.31[0m
 [33;1m[00:00:46.141.061] - [Idle        ] [INFO ] Waiting for new data...[0m
+[34m[00:00:49.662.054] - [Init        ] [Info ] ==============================================================[0m
+[34m[00:00:49.662.054] - [Init        ] [Info ] Phase 3: RTIC-based I3G4250D Gyroscope[0m
+[34m[00:00:49.662.054] - [Init        ] [Info ] ==============================================================[0m
+[34m[00:00:49.662.054] - [Init        ] [Info ] --------------------------------------------------------------[0m
+[34m[00:00:49.662.054] - [Init        ] [Info ] 📋 Configuration Loaded:[0m
+[34m[00:00:49.662.054] - [Init        ] [Info ]  Debug Logs: false[0m
+[34m[00:00:49.662.054] - [Init        ] [Info ]  Stats Enabled: true[0m
+[34m[00:00:49.662.054] - [Init        ] [Info ]  Max Angular Velocity Change: 100°/s[0m
+[34m[00:00:49.662.054] - [Init        ] [Info ]  Log Frequency: Every 4 iterations[0m
+[34m[00:00:49.662.054] - [Init        ] [Info ]  Stats Interval: Every 1000 iterations[0m
+[34m[00:00:49.663.055] - [Init        ] [Info ] --------------------------------------------------------------[0m
+[34m[00:00:49.663.055] - [Init        ] [Info ] Step 1.1: Detect Gyro driver...[0m
+[34m[00:00:49.663.055] - [Init        ] [Info ] ✓ Gyro driver initialized.[0m
+[34m[00:00:49.663.055] - [Init        ] [Info ] ✓ Gyro ID: 0xD3 (I3G4250D)[0m
+[34m[00:00:49.663.055] - [Init        ] [Info ] Step 1.2: Detect Magnetometer driver...[0m
+[34m[00:00:49.663.055] - [Init        ] [Info ] ✓ Accelerometer ID: 0x33 (LSM303AGR)[0m
+[34m[00:00:49.663.055] - [Init        ] [Info ] ✓ Magnetometer ID: 0x40 (LSM303AGR)[0m
+[34m[00:00:49.663.055] - [Init        ] [Info ] [0m
+[34m[00:00:49.663.055] - [Init        ] [Info ] Step 2.1: Init Gyro driver...[0m
+[34m[00:00:49.663.055] - [Init        ] [Info ] ✓ Gyro driver initialized.[0m
+[34m[00:00:49.663.055] - [Init        ] [Info ]  Configuring Gyro...[0m
+[34m[00:00:49.663.055] - [Init        ] [Info ] ✓ Gyro configured.[0m
+[34m[00:00:49.663.055] - [Init        ] [Info ] ✓ Configuration Gyroscope complete:[0m
+[34m[00:00:49.664.056] - [Init        ] [Info ]   - Data Rate: 400 Hz (timer interrupt)[0m
+[34m[00:00:49.664.056] - [Init        ] [Info ]   - Range: 500 °/s[0m
+[34m[00:00:49.664.056] - [Init        ] [Info ] [0m
+[34m[00:00:49.664.056] - [Init        ] [Info ] Step 2.2: Init Accelerometer and Magnetometer driver...[0m
+[34m[00:00:49.664.056] - [Init        ] [Info ] ✓ Accelerometer and Magnetometer driver initialized.[0m
+[34m[00:00:49.664.056] - [Init        ] [Info ] ✓ Configuration Accelerometer and Magnetometer complete:[0m
+[34m[00:00:49.664.056] - [Init        ] [Info ]   - Accelerometer: ±2g, High-Resolution, 100 Hz[0m
+[34m[00:00:49.664.056] - [Init        ] [Info ]   - Magnetometer: Continuous, 100 Hz, High-Resolution[0m
+[34m[00:00:49.664.056] - [Init        ] [Info ] [0m
+[34m[00:00:49.664.056] - [Init        ] [Info ] Enabling DWT cycle counter for performance measurement...[0m
+[34m[00:00:49.664.056] - [Init        ] [Info ] [0m
+[34m[00:00:49.665.057] - [Init        ] [Info ] ✓ RTIC system ready. Starting main loop...[0m
+[34m[00:00:49.665.057] - [Init        ] [Info ] ==============================================================[0m
+[32;1m[00:00:49.665.057] - [ReadSensor  ] [INFO ] 🔴 TIM2 interrupt fired![0m
+[32;1m[00:00:49.665.057] - [ReadSensor  ] [INFO ] ✓ Read sensor data: X:0.42 Y:0.58 Z:-1.14[0m
+[32;1m[00:00:49.665.057] - [ReadSensor  ] [INFO ] 📤 About to spawn process_data...[0m
+[32;1m[00:00:49.665.057] - [ReadSensor  ] [INFO ] ✅ process_data spawned successfully[0m
+[32;1m[00:00:49.665.057] - [ReadSensor  ] [INFO ] ✅ Spawn attempt complete, returning from interrupt[0m
+[32;1m[00:00:49.665.057] - [ReadSensor  ] [INFO ] ⏱️  Measuring performance...[0m
+[32;1m[00:00:49.665.057] - [ReadSensor  ] [INFO ] ✅ read_sensor task complete, cycles: 31826[0m
+[33;1m[00:00:49.665.057] - [Idle        ] [INFO ] Waiting for new data...[0m
