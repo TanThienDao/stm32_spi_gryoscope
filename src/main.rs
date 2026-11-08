@@ -328,24 +328,32 @@ mod app {
         );
         // shared resources initialization
         let shared = Shared {
+            // Shared sensor data (x, y, z angular velocities)
             sensor_data: (0.0, 0.0, 0.0),
             new_data_ready: false,
             read_sensor_total_cycles: 0,
             read_sensor_count: 0,
             process_data_total_cycles: 0,
             process_data_count: 0,
+            //------------------------------------------------
             itm,
+            // Shared sensor data for accelerometer and magnetometer
             sensor_data_accel: (0.0, 0.0, 0.0),
             sensor_data_mag: (0.0, 0.0, 0.0),
+
+            //------------------------------------------------
         };
 
         // Initialize local resources
         let local = Local {
+            // Local gyro driver instance
             gyro: gryo,
-            accel_mag_driver: accel_mag_driver,
             prev_data: (0.0, 0.0, 0.0),
             counter: 0,
             anomaly_counter: 0,
+            // Local accelerometer and magnetometer driver instance
+            accel_mag_driver: accel_mag_driver,
+
         };
 
         (shared, local)
@@ -374,7 +382,7 @@ mod app {
     #[task(binds = TIM2,
     shared = [sensor_data, new_data_ready, read_sensor_total_cycles, read_sensor_count,itm],
     local = [gyro,prev_data, counter, anomaly_counter])]
-    fn read_sensor(mut cx: read_sensor::Context) {
+    fn gyroscope_task(mut cx: gyroscope_task::Context) {
         if AppConfig::DEBUG_ENABLED {
             log_debug!(cx, "Gyroscope", "🔴 TIM2 interrupt fired!");
         }
@@ -492,7 +500,7 @@ mod app {
         if AppConfig::DEBUG_ENABLED {
             log_debug!(
                 cx,
-                "ReadSensor",
+                "Gyroscope",
                 "✅ Read sensor data complete, counter: {}, elapsed cycles: {}",
                 *cx.local.counter,
                 elapsed
