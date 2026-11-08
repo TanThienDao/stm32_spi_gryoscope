@@ -373,12 +373,16 @@ mod app {
     /// Responsibility: read gyro data sensor only.
     #[task(binds = TIM2,
     shared = [sensor_data, new_data_ready, read_sensor_total_cycles, read_sensor_count,itm],
-    local = [gyro])]
+    local = [gyro,prev_data, counter, anomaly_counter])]
     fn read_sensor(mut cx: read_sensor::Context) {
+        if AppConfig::DEBUG_ENABLED {
+            log_debug!(cx, "Gyroscope", "🔴 TIM2 interrupt fired!");
+        }
+        const MAX_DELTA: f32 = AppConfig::MAX_ANGULAR_VELOCITY_CHANGE; // Maximum allowed change in angular velocity
         if AppConfig::DEBUG_ENABLED {
             log_debug!(
                 cx,
-                "ReadSensor",
+                "Gyroscope",
                 "TIM2 interrupt fired, reading sensor data..."
             );
         }
@@ -387,8 +391,10 @@ mod app {
         let _ = timer::tim2::Tim2Guard::check_and_clear_uif();
         // Read angular velocity from the gyroscope
         let gyro = cx.local.gyro;
+
         // Update shared resources with new sensor data
         if let Ok((x, y, z)) = gyro.read_angular_velocity() {
+            log_info!(cx, "Gyroscope", "✓ Read sensor data: X: {:7.2}°/s | Y: {:7.2}°/s | Z: {:7.2}°/s", x, y, z);
             // Update shared resources
             cx.shared.sensor_data.lock(|data| {
                 *data = (x, y, z);
@@ -396,24 +402,107 @@ mod app {
             cx.shared.new_data_ready.lock(|ready| {
                 *ready = true;
             });
+        }
 
-            // Spawn the process_data task to handle the new data
-            process_data::spawn().unwrap();
+        // Consistency check: Compare with previous data
+        let delta_x = (cx.shared.sensor_data.lock(|data| data.0) - cx.local.prev_data.0).abs();
+        let delta_y = (cx.shared.sensor_data.lock(|data| data.1) - cx.local.prev_data.1).abs();
+        let delta_z = (cx.shared.sensor_data.lock(|data| data.2) - cx.local.prev_data.2).abs();
+        if delta_x > MAX_DELTA || delta_y > MAX_DELTA || delta_z > MAX_DELTA {
+            *cx.local.anomaly_counter += 1;
+            log_warn!(
+                cx,
+                "Gyroscope",
+                "⚠️  ANOMALY #{}: Δx={:.2}, Δy={:.2}, Δz={:.2}",
+                *cx.local.anomaly_counter,
+                delta_x,
+                delta_y,
+                delta_z
+            );
+            *cx.local.anomaly_counter +=1;
+        }
+        // Update previous data for the next comparison
+        *cx.local.prev_data = cx.shared.sensor_data.lock(|data| *data);
+
+        // Increment the counter for tracking performance metrics
+        *cx.local.counter += 1;
+        if AppConfig::DEBUG_ENABLED {
+            log_debug!(
+                cx,
+                "Gyroscope",
+                "Read sensor data complete, counter: {}",
+                *cx.local.counter
+            );
         }
 
         // Measure performance of read_sensor task
+        if AppConfig::DEBUG_ENABLED {
+            log_info!(cx, "Gyroscope", "⏱️  Measuring performance...");
+        }
         let end = DWT::cycle_count();
         let elapsed = end.wrapping_sub(start) as u32;
-        cx.shared.read_sensor_total_cycles.lock(|total| {
+        /// Total cucles for 1000 records, average cycles per read_sensor call, and CPU usage percentage
+        let process_total= cx.shared.read_sensor_total_cycles.lock(|total| {
             *total += elapsed;
+            *total
         });
-        cx.shared.read_sensor_count.lock(|count| {
+        /// Total count of read_sensor calls
+        let count = cx.shared.read_sensor_count.lock(|count| {
             *count += 1;
+            *count
         });
+        /// Print statistics every 1000 process_data iterations
+        let should_print = *cx.local.counter % AppConfig::STATS_INTERVAL == 0;
+        if should_print {
+            log_info!(cx, "Gyroscope", "📊 Read_sensor performance: total_cycles={}, count={}", process_total, AppConfig::STATS_INTERVAL);
+            /// Average cycles per read_sensor call and CPU usage percentage
+            let avg_cycles = (process_total / AppConfig::STATS_INTERVAL) as u32;
+            let avg_read_cycles = if count > 0 {
+                process_total as f64 / count as f64
+            } else {
+                0.0
+            };
+            /// Convert cycles to microseconds (72 MHz = 72 cycles per μs)
+            let read_time_us = avg_read_cycles as f64 / 72.0;
+            /// Total measurement period: 1000 iterations at 400 Hz
+            /// = 1000 / 400 Hz = 2.5 seconds = 2,500,000 microseconds
+            /// Convert cycles to microseconds (72 MHz = 72 cycles per μs)
+            let total_period_us = 2_500_000.0;
+            /// CPU Usage = (Time spent executing / Total measurement time) × 100%
+            let cpu_usage = (read_time_us / total_period_us) * 100.0; // Total measurement period: 2.5 seconds
+            log_stats!(cx, "Gyroscope", "");
+            log_stats!(cx, "Gyroscope", "────────────────────────────────────────────────────────");
+            log_stats!(cx, "Gyroscope", "📊 Read_sensor Gyroscope Stats (every {} calls / ~2.5s):", AppConfig::STATS_INTERVAL);
+            log_stats!(cx, "Gyroscope", "  Total Cycles: {}", process_total);
+            log_stats!(cx, "Gyroscope", "  Abnormal Count: {}", *cx.local.anomaly_counter);
+            log_stats!(cx, "Gyroscope", "  Read Sensor Avg: {:.3}μs ({} calls)", read_time_us, count);
+            log_stats!(cx, "Gyroscope", "  CPU Usage: {:.2}%", cpu_usage);
+            log_stats!(cx, "Gyroscope", "────────────────────────────────────────────────────────");
+            /// Reset counters for next measurement window
+            cx.shared.read_sensor_total_cycles.lock(|total| {
+                *total = 0;
+            });
+            cx.shared.read_sensor_count.lock(|count| {
+                *count = 0;
+            });
+            *cx.local.anomaly_counter = 0;
+
+        }
+
+        if AppConfig::DEBUG_ENABLED {
+            log_debug!(
+                cx,
+                "ReadSensor",
+                "✅ Read sensor data complete, counter: {}, elapsed cycles: {}",
+                *cx.local.counter,
+                elapsed
+            );
+        }
     }
 
-    ///Main processing loop (lower priority than interrupt)
+/*    ///Main processing loop (lower priority than interrupt)
     /// Processes the data read from the gyroscope and checks for anomalies.
+    todo for some reason spawn no longer works.
     #[task(
     priority = 1,
     shared = [sensor_data, new_data_ready,
@@ -422,14 +511,17 @@ mod app {
     itm],
     local = [ prev_data, counter, anomaly_counter])]
     async fn process_data(mut cx: process_data::Context) {
+        log_info!(cx, "ProcessData", "🔵 process_data ENTERED - task is executing!");
         let start = DWT::cycle_count();
+
         // Access shared and local resources
         let prev_data = cx.local.prev_data;
         let counter = cx.local.counter;
         let anomaly_counter = cx.local.anomaly_counter;
-        const MAX_DELTA: f32 = AppConfig::MAX_ANGULAR_VELOCITY_CHANGE; // Maximum allowed change in angular velocity
+        const MAX_DELTA: f32 = AppConfig::MAX_ANGULAR_VELOCITY_CHANGE;
 
         // Check if new data is ready
+        log_info!(cx, "ProcessData", "📥 Checking if new data is ready...");
         let has_data = cx.shared.new_data_ready.lock(|ready| {
             if *ready {
                 *ready = false;
@@ -438,7 +530,9 @@ mod app {
                 false
             }
         });
+        log_info!(cx, "ProcessData", "📥 has_data={}", has_data);
         if !has_data {
+            log_info!(cx, "ProcessData", "⏭️  No new data, skipping processing");
             return;
         }
 
@@ -585,5 +679,5 @@ mod app {
                 *count = 0;
             });
         }
-    }
+    }*/
 }

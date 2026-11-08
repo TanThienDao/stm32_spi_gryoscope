@@ -88,6 +88,7 @@ impl LogColor {
             "Init" => LogColor::Cyan,
             "ReadSensor" => LogColor::CHARTREUSE,
             "ProcessData" => LogColor::SKY,
+            "Gyroscope" => LogColor::CHARTREUSE,
             "Idle" => LogColor::Honey,
             _ => LogColor::None, // Default color for unknown tasks
         }
@@ -124,6 +125,7 @@ pub fn get_padded_task(task: &str) -> &'static str {
         "ReadSensor" => "ReadSensor  ",  // 12 chars total
         "ProcessData" => "ProcessData ", // 12 chars total
         "Idle" => "Idle        ",        // 12 chars total
+        "Gyroscope" => "Gyroscope   ",   // 12 chars total
         _ => "Unknown     ",             // 12 chars total
     }
 }
