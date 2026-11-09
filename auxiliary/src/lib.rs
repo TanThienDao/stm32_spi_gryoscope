@@ -1,5 +1,4 @@
 #![no_std]
-
 #[allow(unused_extern_crates)]
 extern crate panic_itm;
 
@@ -13,9 +12,9 @@ use embedded_hal::digital::v2::OutputPin;
 pub use stm32f3_discovery::stm32f3xx_hal::{
     delay::Delay,
     gpio::gpioa::{PA5, PA6, PA7},
-    gpio::gpioe::PE3,
     gpio::gpiob::{PB6, PB7},
-    gpio::{Alternate, Output, PushPull, AF5,OpenDrain,AF4},
+    gpio::gpioe::PE3,
+    gpio::{Alternate, OpenDrain, Output, PushPull, AF4, AF5},
     i2c::I2c,
     interrupt::{self},
     pac::{self, SPI1, TIM2},

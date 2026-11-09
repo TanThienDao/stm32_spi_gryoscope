@@ -200,17 +200,188 @@ impl AccelConfig {
     }
 
     /// Get register bits for CTRL_REG4 (full-scale range configuration).
-    pub fn ctrl_reg4_bits(&self) -> u8 {
+    pub fn ctrl_reg1_and_reg4_bits(&self) -> u8 {
         let range_bits = self.range.ctrl_reg4_bits();
         let (mode_bits, _) = self.mode.ctrl_reg_bits();
         range_bits | mode_bits
     }
 
-    /// Get register bits for CTRL_REG1 (operating mode configuration).
-    ///
+    /// Get register bits for CTRL_REG4_A (23h) (operating mode configuration).
     /// This returns only the mode bits. You'll need to OR this with ODR and axis enable bits.
-    pub fn ctrl_reg1_mode_bits(&self) -> u8 {
+    /// The Hr bit (bit 3) is set for High-Resolution mode,
+    pub fn ctrl_reg4_mode_bits(&self) -> u8 {
         let (_, mode_bits) = self.mode.ctrl_reg_bits();
         mode_bits
+    }
+    /// Get register bits for CTRL_REG1_A (20h) (data rate and axis enable configuration).
+    /// This returns the LPen bit (bit 3) for Low-Power mode.
+    pub fn ctrl_reg1_mode_bits(&self) -> u8 {
+        let (mode_bits, _) = self.mode.ctrl_reg_bits();
+        mode_bits
+    }
+}
+
+/// Unit tests for AccelConfig and scale factor calculations
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::interrupt;
+
+    #[test]
+    fn test_accel_range_ctrl_reg4_bits() {
+        assert_eq!(AccelRange::G2.ctrl_reg4_bits(), ACCEL_FS_2G);
+        assert_eq!(AccelRange::G4.ctrl_reg4_bits(), ACCEL_FS_4G);
+        assert_eq!(AccelRange::G8.ctrl_reg4_bits(), ACCEL_FS_8G);
+        assert_eq!(AccelRange::G16.ctrl_reg4_bits(), ACCEL_FS_16G);
+    }
+    #[test]
+    fn test_accel_operating_mode_ctrl_reg_bits() {
+        assert_eq!(
+            AccelOperatingMode::HighResolution.ctrl_reg_bits(),
+            (0x00, ACCEL_HR_ENABLE)
+        );
+        assert_eq!(AccelOperatingMode::Normal.ctrl_reg_bits(), (0x00, 0x00));
+        assert_eq!(
+            AccelOperatingMode::LowPower.ctrl_reg_bits(),
+            (ACCEL_LP_ENABLE, 0x00)
+        );
+    }
+    #[test]
+    fn test_accel_data_rate_ctrl_reg1_bits() {
+        assert_eq!(
+            AccelDataRate::PowerDown.ctrl_reg1_bits(),
+            ACCEL_ODR_POWER_DOWN
+        );
+        assert_eq!(AccelDataRate::Hz1.ctrl_reg1_bits(), ACCEL_ODR_1_HZ);
+        assert_eq!(AccelDataRate::Hz10.ctrl_reg1_bits(), ACCEL_ODR_10_HZ);
+        assert_eq!(AccelDataRate::Hz25.ctrl_reg1_bits(), ACCEL_ODR_25_HZ);
+        assert_eq!(AccelDataRate::Hz50.ctrl_reg1_bits(), ACCEL_ODR_50_HZ);
+        assert_eq!(AccelDataRate::Hz100.ctrl_reg1_bits(), ACCEL_ODR_100_HZ);
+        assert_eq!(AccelDataRate::Hz200.ctrl_reg1_bits(), ACCEL_ODR_200_HZ);
+        assert_eq!(AccelDataRate::Hz400.ctrl_reg1_bits(), ACCEL_ODR_400_HZ);
+        assert_eq!(
+            AccelDataRate::LowPower1_6KHz.ctrl_reg1_bits(),
+            ACCEL_ODR_LOW_POWER_1_6_KHZ
+        );
+        assert_eq!(
+            AccelDataRate::LowPower5_376KHz.ctrl_reg1_bits(),
+            ACCEL_ODR_LOW_POWER_5_376_KHZ
+        );
+    }
+
+    #[test]
+    fn test_accel_config_get_ctrl_reg_bits() {
+        let config = AccelConfig::new(
+            AccelRange::G4,
+            AccelOperatingMode::HighResolution,
+            AccelDataRate::Hz100,
+        );
+        let ctrl_reg1_bits = config.get_ctrl_reg1_bits();
+        let ctrl_reg4_bits = config.get_ctrl_reg4_bits();
+        assert_eq!(ctrl_reg1_bits, ACCEL_ODR_100_HZ | ACCEL_ALL_AXES);
+        assert_eq!(ctrl_reg4_bits, ACCEL_FS_4G | ACCEL_HR_ENABLE);
+    }
+    #[test]
+    fn test_accel_config_ctrl_reg_bits() {
+        let config = AccelConfig::new(
+            AccelRange::G8,
+            AccelOperatingMode::LowPower,
+            AccelDataRate::Hz50,
+        );
+        let ctrl_reg4_mode_bits = config.ctrl_reg4_mode_bits();
+        let ctrl_reg1_mode_bits = config.ctrl_reg1_mode_bits();
+        let ctrl_reg1_and_reg4_bits = config.ctrl_reg1_and_reg4_bits();
+        assert_eq!(ctrl_reg1_mode_bits, ACCEL_LP_ENABLE);
+        assert_eq!(ctrl_reg4_mode_bits, 0x00);
+        assert_eq!(ctrl_reg1_and_reg4_bits, ACCEL_FS_8G | ACCEL_LP_ENABLE);
+    }
+
+    #[test]
+    fn test_accel_config_get_ctrl_reg1_and_reg4_bits() {
+        let config = AccelConfig::new(
+            AccelRange::G16,
+            AccelOperatingMode::Normal,
+            AccelDataRate::Hz200,
+        );
+        let ctrl_reg1_and_reg4_bits = config.ctrl_reg1_and_reg4_bits();
+        assert_eq!(ctrl_reg1_and_reg4_bits, ACCEL_FS_16G | 0x00);
+    }
+    #[test]
+    fn test_accel_config_scale_factor_mg() {
+        // High-Resolution mode
+        let config_hr_g2 = AccelConfig::new(
+            AccelRange::G2,
+            AccelOperatingMode::HighResolution,
+            AccelDataRate::Hz100,
+        );
+        assert!((config_hr_g2.scale_factor_mg() - 0.98).abs() < 0.01);
+        let config_hr_g4 = AccelConfig::new(
+            AccelRange::G4,
+            AccelOperatingMode::HighResolution,
+            AccelDataRate::Hz100,
+        );
+        assert!((config_hr_g4.scale_factor_mg() - 1.95).abs() < 0.01);
+        let config_hr_g8 = AccelConfig::new(
+            AccelRange::G8,
+            AccelOperatingMode::HighResolution,
+            AccelDataRate::Hz100,
+        );
+        assert!((config_hr_g8.scale_factor_mg() - 3.9).abs() < 0.01);
+        let config_hr_g16 = AccelConfig::new(
+            AccelRange::G16,
+            AccelOperatingMode::HighResolution,
+            AccelDataRate::Hz100,
+        );
+        assert!((config_hr_g16.scale_factor_mg() - 11.72).abs() < 0.01);
+        // Normal mode
+        let config_normal_g2 = AccelConfig::new(
+            AccelRange::G2,
+            AccelOperatingMode::Normal,
+            AccelDataRate::Hz100,
+        );
+        assert!((config_normal_g2.scale_factor_mg() - 3.9).abs() < 0.01);
+        let config_normal_g4 = AccelConfig::new(
+            AccelRange::G4,
+            AccelOperatingMode::Normal,
+            AccelDataRate::Hz100,
+        );
+        assert!((config_normal_g4.scale_factor_mg() - 7.82).abs() < 0.01);
+        let config_normal_g8 = AccelConfig::new(
+            AccelRange::G8,
+            AccelOperatingMode::Normal,
+            AccelDataRate::Hz100,
+        );
+        assert!((config_normal_g8.scale_factor_mg() - 15.63).abs() < 0.01);
+        let config_normal_g16 = AccelConfig::new(
+            AccelRange::G16,
+            AccelOperatingMode::Normal,
+            AccelDataRate::Hz100,
+        );
+        assert!((config_normal_g16.scale_factor_mg() - 46.9).abs() < 0.01);
+        // Low-Power mode
+        let config_lp_g2 = AccelConfig::new(
+            AccelRange::G2,
+            AccelOperatingMode::LowPower,
+            AccelDataRate::Hz100,
+        );
+        assert!((config_lp_g2.scale_factor_mg() - 15.63).abs() < 0.01);
+        let config_lp_g8 = AccelConfig::new(
+            AccelRange::G8,
+            AccelOperatingMode::LowPower,
+            AccelDataRate::Hz100,
+        );
+        assert!((config_lp_g8.scale_factor_mg() - 62.52).abs() < 0.01);
+        let config_lp_g4 = AccelConfig::new(
+            AccelRange::G4,
+            AccelOperatingMode::LowPower,
+            AccelDataRate::Hz100,
+        );
+        assert!((config_lp_g4.scale_factor_mg() - 31.26).abs() < 0.01);
+        let config_lp_g16 = AccelConfig::new(
+            AccelRange::G16,
+            AccelOperatingMode::LowPower,
+            AccelDataRate::Hz100,
+        );
+        assert!((config_lp_g16.scale_factor_mg() - 187.58).abs() < 0.01);
     }
 }
