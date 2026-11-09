@@ -21,4 +21,3 @@ pub unsafe extern "C" fn _critical_section_1_0_release(was_active: u8) {
         interrupt::enable();
     }
 }
-

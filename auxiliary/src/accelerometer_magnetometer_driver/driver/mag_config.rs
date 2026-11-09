@@ -132,3 +132,133 @@ impl MagConfig {
             | self.power_mode.cfg_reg_a_m_power_bits()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::interrupt;
+
+    #[test]
+    fn test_mag_range_cfg_reg_b_bits() {
+        let range = MagRange::Gauss50;
+        let reg_b_bits = range.cfg_reg_b_bits();
+        assert_eq!(reg_b_bits, 10); // Expected value for ±50 gauss
+    }
+    #[test]
+    fn test_mag_data_rate_cfg_reg_a_m_odr_bits() {
+        let data_rate = MagDataRate::Hz10;
+        let reg_a_m_odr_bits = data_rate.cfg_reg_a_m_odr_bits();
+        assert_eq!(reg_a_m_odr_bits, MAG_ODR_10_HZ); // Expected value for 10 Hz
+
+        let data_rate = MagDataRate::Hz20;
+        let reg_a_m_odr_bits = data_rate.cfg_reg_a_m_odr_bits();
+        assert_eq!(reg_a_m_odr_bits, MAG_ODR_20_HZ);
+
+        let data_rate = MagDataRate::Hz50;
+        let reg_a_m_odr_bits = data_rate.cfg_reg_a_m_odr_bits();
+        assert_eq!(reg_a_m_odr_bits, MAG_ODR_50_HZ);
+
+        let data_rate = MagDataRate::Hz100;
+        let reg_a_m_odr_bits = data_rate.cfg_reg_a_m_odr_bits();
+        assert_eq!(reg_a_m_odr_bits, MAG_ODR_100_HZ);
+    }
+    #[test]
+    fn test_mag_operating_mode_cfg_reg_a_m_md_bits() {
+        let operating_mode = MagOperatingMode::Continuous;
+        let reg_a_m_md_bits = operating_mode.cfg_reg_a_m_md_bits();
+        assert_eq!(reg_a_m_md_bits, MAG_MODE_CONTINUOUS); // Expected value for Continuous
+
+        let operating_mode = MagOperatingMode::Single;
+        let reg_a_m_md_bits = operating_mode.cfg_reg_a_m_md_bits();
+        assert_eq!(reg_a_m_md_bits, MAG_MODE_SINGLE); // Expected value for Single
+
+        let operating_mode = MagOperatingMode::Idle;
+        let reg_a_m_md_bits = operating_mode.cfg_reg_a_m_md_bits();
+        assert_eq!(reg_a_m_md_bits, MAG_MODE_IDLE); // Expected value for Idle
+    }
+    #[test]
+    fn test_mag_power_mode_cfg_reg_a_m_power_bits() {
+        let power_mode = MagPowerMode::HighResolution;
+        let reg_a_m_power_bits = power_mode.cfg_reg_a_m_power_bits();
+        assert_eq!(reg_a_m_power_bits, MAG_LP_DISABLE); // Expected value for High-Resolution
+
+        let power_mode = MagPowerMode::LowPower;
+        let reg_a_m_power_bits = power_mode.cfg_reg_a_m_power_bits();
+        assert_eq!(reg_a_m_power_bits, MAG_LP_ENABLE); // Expected value for Low-Power
+    }
+
+    #[test]
+    fn test_mag_power_mode_set_mag_power_mode() {
+        let power_mode = MagPowerMode::HighResolution;
+        let reg_a_m_power_bits = power_mode.set_mag_power_mode(MagPowerMode::HighResolution);
+        assert_eq!(reg_a_m_power_bits, MAG_LPF_ENABLE); // Expected value for High-Resolution
+
+        let power_mode = MagPowerMode::LowPower;
+        let reg_a_m_power_bits = power_mode.set_mag_power_mode(MagPowerMode::LowPower);
+        assert_eq!(reg_a_m_power_bits, MAG_LP_DISABLE); // Expected value for Low-Power
+
+        let power_mode = MagPowerMode::HighResolution;
+        let reg_a_m_power_bits = power_mode.set_mag_power_mode(MagPowerMode::LowPower);
+        assert_eq!(reg_a_m_power_bits, MAG_LP_DISABLE); // Expected value for Low-Power when called from High-Resolution
+
+        let power_mode = MagPowerMode::LowPower;
+        let reg_a_m_power_bits = power_mode.set_mag_power_mode(MagPowerMode::HighResolution);
+        assert_eq!(reg_a_m_power_bits, MAG_LPF_ENABLE); // Expected value for High-Resolution when called from Low-Power
+    }
+
+    #[test]
+    fn test_mag_config_cfg_reg_a_m_bits() {
+        let config = MagConfig::new(
+            MagOperatingMode::Continuous,
+            MagDataRate::Hz10,
+            MagPowerMode::HighResolution,
+        );
+        let reg_a_m_bits = config.cfg_reg_a_m_bits();
+        // Expected value for Continuous, 10 Hz, High-Resolution
+        assert_eq!(
+            reg_a_m_bits,
+            MAG_ODR_10_HZ | MAG_MODE_CONTINUOUS | MAG_LP_DISABLE
+        );
+    }
+
+    #[test]
+    fn test_cfg_reg_a_m_bits() {
+        let config = MagConfig::new(
+            MagOperatingMode::Single,
+            MagDataRate::Hz20,
+            MagPowerMode::LowPower,
+        );
+        let reg_a_m_bits = config.cfg_reg_a_m_bits();
+        // Expected value for Single, 20 Hz, Low-Power
+        assert_eq!(
+            reg_a_m_bits,
+            MAG_ODR_20_HZ | MAG_MODE_SINGLE | MAG_LP_ENABLE
+        );
+    }
+
+    #[test]
+    fn test_cfg_reg_a_m_bits_idle() {
+        let config = MagConfig::new(
+            MagOperatingMode::Idle,
+            MagDataRate::Hz50,
+            MagPowerMode::HighResolution,
+        );
+        let reg_a_m_bits = config.cfg_reg_a_m_bits();
+        // Expected value for Idle, 50 Hz, High-Resolution
+        assert_eq!(reg_a_m_bits, MAG_ODR_50_HZ | MAG_MODE_IDLE | MAG_LP_DISABLE);
+    }
+    #[test]
+    fn test_cfg_reg_a_m_bits_low_power() {
+        let config = MagConfig::new(
+            MagOperatingMode::Continuous,
+            MagDataRate::Hz100,
+            MagPowerMode::LowPower,
+        );
+        let reg_a_m_bits = config.cfg_reg_a_m_bits();
+        // Expected value for Continuous, 100 Hz, Low-Power
+        assert_eq!(
+            reg_a_m_bits,
+            MAG_ODR_100_HZ | MAG_MODE_CONTINUOUS | MAG_LP_ENABLE
+        );
+    }
+}
