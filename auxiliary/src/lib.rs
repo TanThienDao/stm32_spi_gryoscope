@@ -100,8 +100,8 @@ pub fn init() -> (
     let delay = Delay::new(cp.SYST, clocks);
     //init TIM2 for interrupt-driven updates
     let tim2_config = timer::TimerConfig::new(100_000, 400);
-    let mut tim2 = timer::tim2::Tim2Guard::new(tim2_config).unwrap();
-    tim2.init(&mut dp.TIM2).unwrap();
+    //let mut tim2 = timer::tim2::Tim2Guard::new(tim2_config).unwrap();
+    //tim2.init(&mut dp.TIM2).unwrap();
 
     (cp.ITM, delay, spi, cs, dwt)
 }

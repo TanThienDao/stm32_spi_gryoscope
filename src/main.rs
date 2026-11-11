@@ -74,7 +74,9 @@ mod app {
         ctx.device.RCC.apb1enr.modify(|_, w| w.tim2en().set_bit());
         //init TIM2 for interrupt-driven updates
         init_time2(&mut ctx.device).unwrap();
-
+        //todo Step 0: Enable TIM3 clock in RCC (APB1ENR)
+        ctx.device.RCC.apb1enr.modify(|_, w| w.tim3en().set_bit());
+        //todo init TIM3 for interrupt-driven updates
         //Set up clock
         let mut dwt = ctx.core.DWT;
         let mut flash = ctx.device.FLASH.constrain();

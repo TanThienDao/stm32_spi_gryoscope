@@ -39,11 +39,14 @@ impl Tim2Guard {
         tim2.arr.write(|w| w.arr().bits(arr));
         //Step 3: Enable counter and update event generation
         tim2.cr1.write(|w| {
-            w
-                .cen().set_bit() // Counter enabled
-                .udis().clear_bit() // Update event enabled
-                .dir().clear_bit() // Count up
-                .arpe().clear_bit() // Auto-reload preload disabled
+            w.cen()
+                .set_bit() // Counter enabled
+                .udis()
+                .clear_bit() // Update event enabled
+                .dir()
+                .clear_bit() // Count up
+                .arpe()
+                .clear_bit() // Auto-reload preload disabled
         });
         //Step 4: Enable TIM2 interrupt on update event (UIE)
         tim2.dier.write(|w| w.uie().set_bit());
