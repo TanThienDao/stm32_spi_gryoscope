@@ -39,7 +39,9 @@ pub trait TimerGuard {
     fn is_update_interrupt_flag_set(&mut self) -> TimXResult<bool>;
 
     /// Clear the update interrupt flag (UIF) after handling the interrupt.
-    fn clear_update_interrupt_flag(&mut self);
+    fn clear_update_interrupt_flag(&mut self) -> TimXResult<()>;
+    /// Set the update interrupt flag (UIF) start the timer and enable interrupts.
+    fn set_update_interrupt_flag(&mut self) -> TimXResult<()>;
 }
 /// Peripheral marker implementation
 impl TimerPeripheral for TIM2 {
