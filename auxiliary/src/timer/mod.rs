@@ -2,7 +2,7 @@
 //!
 //! Manager TIM2 configuration and interrupt handling
 
-mod general_purpose_timers;
+pub mod general_purpose_timers;
 pub mod tim2;
 
 /// Timer congiguration parameter

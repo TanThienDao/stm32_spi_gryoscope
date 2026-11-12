@@ -20,6 +20,7 @@ mod app {
     use auxiliary::accelerometer_magnetometer_driver::driver::mag_config::{
         MagConfig, MagDataRate, MagOperatingMode, MagPowerMode,
     };
+    use auxiliary::timer::general_purpose_timers::timer_trait::TimerGuard;
     use auxiliary::*;
     use rtic::Mutex;
 
@@ -37,8 +38,8 @@ mod app {
         read_sensor_total_cycles: u32,
         read_sensor_count: u32,
         /// Performane tracking for process_data task
-        process_data_total_cycles: u32,
-        process_data_count: u32,
+        process_data_total_cycles: u32,//todo currently not used
+        process_data_count: u32,//todo currently not used
         /// Shared sensor data for accelerometer and magnetometer
         sensor_data_accel: (f32, f32, f32),
         sensor_data_mag: (f32, f32, f32),
@@ -74,9 +75,11 @@ mod app {
         ctx.device.RCC.apb1enr.modify(|_, w| w.tim2en().set_bit());
         //init TIM2 for interrupt-driven updates
         init_time2(&mut ctx.device).unwrap();
-        //todo Step 0: Enable TIM3 clock in RCC (APB1ENR)
+
+        //Step 0: Enable TIM3 clock in RCC (APB1ENR)
         ctx.device.RCC.apb1enr.modify(|_, w| w.tim3en().set_bit());
-        //todo init TIM3 for interrupt-driven updates
+        init_time3(&mut ctx.device).unwrap();
+
         //Set up clock
         let mut dwt = ctx.core.DWT;
         let mut flash = ctx.device.FLASH.constrain();
@@ -205,8 +208,9 @@ mod app {
             itm,
             "--------------------------------------------------------------"
         );
-
+        //==============================================================
         // Step 1.1: Detect Gyro driver
+        //==============================================================
         log_init!(itm, "Step 1.1: Detect Gyro driver...");
         let mut gryo = GyroDriver::new(spi, cs);
         log_init!(itm, "✓ Gyro driver initialized.");
@@ -224,8 +228,9 @@ mod app {
                 loop {}
             }
         }
-
+        //==============================================================
         // Step 1.2: Detect Magnetometer driver
+        //==============================================================
         log_init!(itm, "Step 1.2: Detect Magnetometer driver...");
         let mut accel_mag_driver = Lsm303agr::new(
             i2c,
@@ -261,8 +266,13 @@ mod app {
             }
         }
         log_init!(itm, "");
+        //==============================================================
+        // Detect I3G4250D and LSM303AGR driver complete
+        //==============================================================
 
+        //==============================================================
         // Step 2.1: Initialize Gyro driver
+        //==============================================================
         log_init!(itm, "Step 2.1: Init Gyro driver...");
         // Initialize the gyro
         if let Err(e) = gryo.init() {
@@ -287,7 +297,9 @@ mod app {
         log_init!(itm, "  - Range: 500 °/s");
         log_init!(itm, "");
 
+        //==============================================================
         // Step 2.2: Initialize Accelerometer and Magnetometer driver
+        //==============================================================
         log_init!(
             itm,
             "Step 2.2: Init Accelerometer and Magnetometer driver..."
@@ -321,6 +333,10 @@ mod app {
             itm,
             "=============================================================="
         );
+        //==============================================================
+        // End initialization for both Gyroscope and Accelerometer/Magnetometer
+        //==============================================================
+
         // shared resources initialization
         let shared = Shared {
             // Shared sensor data (x, y, z angular velocities)
@@ -534,6 +550,49 @@ mod app {
                 *cx.local.counter,
                 elapsed
             );
+        }
+    }
+
+    // ==== TIM3 Interrupt Hardware Task (HIGH PRIORITY) ====
+    /// TIM3 interrupt handler bound through RTIC.
+    /// High priority: runs as soon as interrupt fires.
+    /// Responsibility: read accelerometer and magnetometer data sensor only.
+    #[task(binds = TIM3,
+    shared = [sensor_data_accel, sensor_data_mag, itm],
+    local = [accel_mag_driver])]
+    fn accel_mag_task(mut cx: accel_mag_task::Context) {
+        if AppConfig::DEBUG_ENABLED {
+            log_debug!(cx, "ReadSensor", "🔴 TIM3 interrupt fired!");
+        }
+        let start = DWT::cycle_count();
+        // Clear the update interrupt flag (UIF) for TIM3 to acknowledge the interrupt
+        let _ = timer::general_purpose_timers::tim3::Tim3Guard::clear_update_interrupt_flag();
+        // Read accelerometer and magnetometer data
+        let accel_mag_driver = cx.local.accel_mag_driver;
+        if let Ok((accel_data)) = accel_mag_driver.read_accel_g() {
+            log_info!(cx, "Accelerometer", "✓ Read accelerometer data: X: {:7.2}g | Y: {:7.2}g | Z: {:7.2}g",
+                accel_data.0, accel_data.1, accel_data.2);
+            // Update shared resources
+            cx.shared.sensor_data_accel.lock(|data| {
+                *data = accel_data;
+            });
+        } else {
+            log_warn!(cx, "Accelerometer", "✗ Error reading accelerometer and magnetometer data!");
+        }
+        if let Ok((mag_data)) = accel_mag_driver.read_mag_gauss() {
+            log_info!(cx, "Magnetometer", "✓ Read magnetometer data: X: {:7.2}G | Y: {:7.2}G | Z: {:7.2}G",
+                mag_data.0, mag_data.1, mag_data.2);
+            // Update shared resources
+            cx.shared.sensor_data_mag.lock(|data| {
+                *data = mag_data;
+            });
+        } else {
+            log_warn!(cx, "Magnetometer", "✗ Error reading magnetometer data!");
+        }
+        let end = DWT::cycle_count();
+        let elapsed = end.wrapping_sub(start) as u32;
+        if AppConfig::DEBUG_ENABLED {
+            log_debug!(cx, "ReadSensor", "✅ Read accelerometer and magnetometer data complete, elapsed cycles: {}", elapsed);
         }
     }
 

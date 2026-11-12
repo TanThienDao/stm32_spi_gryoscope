@@ -43,6 +43,10 @@ pub enum LogColor {
     Cyan,
     /// CHARTREUSE - for ReadSensor (data acquisition)
     CHARTREUSE,
+    /// -for Accelerometer
+    Purple,
+    /// -for Magnetometer
+    Teal,
     /// SKY - for ProcessData (processing)
     SKY,
     /// Honey - for Errors/Anomalies
@@ -69,6 +73,8 @@ impl LogColor {
         match self {
             LogColor::Cyan => "\x1b[36m",         // Cyan
             LogColor::CHARTREUSE => "\x1b[32;1m", // Bright Green (for ReadSensor)
+            LogColor::Purple => "\x1b[35;1m",     // Bright Purple (for Accelerometer)
+            LogColor::Teal => "\x1b[36;1m",       // Bright Cyan (for Magnetometer)
             LogColor::SKY => "\x1b[34;1m",        // Bright Blue (for ProcessData)
             LogColor::Honey => "\x1b[33;1m",      // Bright Yellow/Orange (for errors)
             LogColor::Magenta => "\x1b[35m",      // Magenta (for stats)
@@ -89,6 +95,8 @@ impl LogColor {
             "ReadSensor" => LogColor::CHARTREUSE,
             "ProcessData" => LogColor::SKY,
             "Gyroscope" => LogColor::CHARTREUSE,
+            "Accelerometer" => LogColor::Purple,
+            "Magnetometer" => LogColor::Teal,
             "Idle" => LogColor::Honey,
             _ => LogColor::None, // Default color for unknown tasks
         }
@@ -121,12 +129,14 @@ pub fn format_timestamp() -> (u64, u64, u64, u64, u64) {
 /// Helper to print padded task name
 pub fn get_padded_task(task: &str) -> &'static str {
     match task {
-        "Init" => "Init        ",        // 12 chars total
-        "ReadSensor" => "ReadSensor  ",  // 12 chars total
-        "ProcessData" => "ProcessData ", // 12 chars total
-        "Idle" => "Idle        ",        // 12 chars total
-        "Gyroscope" => "Gyroscope   ",   // 12 chars total
-        _ => "Unknown     ",             // 12 chars total
+        "Init" => "Init           ",        // 15 chars total
+        "ReadSensor" => "ReadSensor     ",  // 15 chars total
+        "ProcessData" => "ProcessData    ", // 15 chars total
+        "Idle" => "Idle           ",        // 15 chars total
+        "Gyroscope" => "Gyroscope      ",   // 15 chars total
+        "Accelerometer" => "Accelerometer  ", // 15 chars total
+        "Magnetometer" => "Magnetometer   ", // 15 chars total
+        _ => "Unknown        ",             // 15 chars total
     }
 }
 
