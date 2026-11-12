@@ -191,11 +191,20 @@ where
 }
 
 /// Sets tim2
-pub fn init_time2(dp: &mut pac::Peripherals) -> Result<(), &'static str> {
+pub fn init_time2_(dp: &mut pac::Peripherals) -> Result<(), &'static str> {
     // Initialize TIM2 for interrupt-driven updates
     let tim2_config = timer::TimerConfig::new(100_000, 400);
     let mut tim2 = timer::tim2::Tim2Guard::new(tim2_config).unwrap();
     tim2.init(&mut dp.TIM2)?;
+    Ok(())
+}
+
+/// Initializes TIM2
+pub fn init_time2(dp: &mut pac::Peripherals) -> Result<(), &'static str> {
+    // Initialize TIM2 for interrupt-driven updates
+    let tim2_config = timer::TimerConfig::new(100_000, 100);
+    let mut tim2 = timer::general_purpose_timers::tim2::Tim2Guard::new(tim2_config).unwrap();
+    tim2.init(&mut dp.TIM2).map_err(|_| "Failed to initialize TIM2")?;
     Ok(())
 }
 

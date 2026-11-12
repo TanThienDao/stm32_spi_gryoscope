@@ -405,7 +405,7 @@ mod app {
         }
         let start = DWT::cycle_count();
         // Clear the update interrupt flag (UIF) for TIM2 to acknowledge the interrupt
-        let _ = timer::tim2::Tim2Guard::check_and_clear_uif();
+        let _ = timer::general_purpose_timers::tim2::Tim2Guard::clear_update_interrupt_flag();
         // Read angular velocity from the gyroscope
         let gyro = cx.local.gyro;
 
