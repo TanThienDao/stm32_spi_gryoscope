@@ -125,4 +125,37 @@ impl TimerGuard for Tim3Guard {
     }
 }
 
-// TODO Re-do the unit test. 
+///Unit tests for Tim3Guard
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_tim3_guard_initialization() {
+        let config = TimerConfig::new(100_000, 400);
+        let mut tim3_guard = Tim3Guard::new(config).unwrap();
+        assert!(!tim3_guard.initialized);
+    }
+
+    #[test]
+    fn test_tim3_guard_create() {
+        let config = TimerConfig::new(100_000, 400);
+        let mut tim3_guard = Tim3Guard::new(config);
+        assert!(tim3_guard.is_ok());
+    }
+
+    #[test]
+    fn test_tim3_get_config() {
+        let config = TimerConfig::new(100_000, 400);
+        let tim3_guard = Tim3Guard::new(config).unwrap();
+        let retrieved_config = &tim3_guard.config;
+        assert_eq!(retrieved_config.cpu_clock_hz, 72_000_000);
+        assert_eq!(retrieved_config.target_timer_clock_hz, 100_000);
+        assert_eq!(retrieved_config.interrupt_enable_hz, 400);
+    }
+   // TODO: Add more unit tests for start, stop, reset, get_counter, is_update_interrupt_flag_set, clear_update_interrupt_flag, set_update_interrupt_flag
+    // Note: I just realized that testing the strictly type-safe Tim3Guard methods is a bit tricky
+    // because they require access to the actual TIM3 peripheral, which is hardware-specific.
+    // For unit testing, we might need to mock the TIM3 peripheral or use a hardware abstraction layer (HAL)
+    // that allows for testing without actual hardware.
+    //  Maybe should not mock that TIM3 peripheral ?
+}
