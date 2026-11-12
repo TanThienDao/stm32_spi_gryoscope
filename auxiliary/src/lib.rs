@@ -1,4 +1,5 @@
 #![no_std]
+use crate::timer::general_purpose_timers::timer_trait::TimerGuard;
 #[allow(unused_extern_crates)]
 extern crate panic_itm;
 
@@ -195,5 +196,14 @@ pub fn init_time2(dp: &mut pac::Peripherals) -> Result<(), &'static str> {
     let tim2_config = timer::TimerConfig::new(100_000, 400);
     let mut tim2 = timer::tim2::Tim2Guard::new(tim2_config).unwrap();
     tim2.init(&mut dp.TIM2)?;
+    Ok(())
+}
+
+/// Initializes TIM3
+pub fn init_time3(dp: &mut pac::Peripherals) -> Result<(), &'static str> {
+    // Initialize TIM3 for interrupt-driven updates
+    let tim3_config = timer::TimerConfig::new(100_000, 100);
+    let mut tim3 = timer::general_purpose_timers::tim3::Tim3Guard::new(tim3_config).unwrap();
+    tim3.init(&mut dp.TIM3).map_err(|_| "Failed to initialize TIM3")?;
     Ok(())
 }

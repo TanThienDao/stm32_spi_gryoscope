@@ -21,27 +21,27 @@ pub trait TimerGuard {
     type Peripheral: TimerPeripheral;
     /// Initialize the timer with clock, prescaler, and auto-reload values based on the provided configuration.
     /// Return result to catch configuration errors.
-    fn init(&mut self, config: &TimerConfig) -> TimXResult<()>;
+    fn init(&mut self,tim3: &mut TIM3) -> TimXResult<()>;
 
     /// Start the timer and enable interrupts.
-    fn start(&mut self) -> TimXResult<()>;
+    fn start(&mut self,tim3: &mut TIM3) -> TimXResult<()>;
 
     /// Stop the timer and disable interrupts.
-    fn stop(&mut self) -> TimXResult<()>;
+    fn stop(&mut self,tim3: &mut TIM3) -> TimXResult<()>;
 
     /// Reset the timer counter to zero
-    fn reset(&mut self) -> TimXResult<()>;
+    fn reset(&mut self,tim3: &mut TIM3) -> TimXResult<()>;
 
     /// Get current counter value.
-    fn get_counter(&mut self) -> TimXResult<u32>;
+    fn get_counter(&mut self,tim3: &mut TIM3) -> TimXResult<u32>;
 
     /// Check if update interrupt flag (UIF) is set, indicating an update event has occurred.
-    fn is_update_interrupt_flag_set(&mut self) -> TimXResult<bool>;
+    fn is_update_interrupt_flag_set(&mut self,tim3: &mut TIM3) -> TimXResult<bool>;
 
     /// Clear the update interrupt flag (UIF) after handling the interrupt.
-    fn clear_update_interrupt_flag(&mut self) -> TimXResult<()>;
+    fn clear_update_interrupt_flag() -> TimXResult<()>;
     /// Set the update interrupt flag (UIF) start the timer and enable interrupts.
-    fn set_update_interrupt_flag(&mut self) -> TimXResult<()>;
+    fn set_update_interrupt_flag(&mut self,tim3: &mut TIM3) -> TimXResult<()>;
 }
 /// Peripheral marker implementation
 impl TimerPeripheral for TIM2 {
