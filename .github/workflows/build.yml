@@ -13,8 +13,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+      - name: Install Cargo Nexttest
+        run: cargo install cargo-nextest
       - name: Run unit tests
-        run: cd auxiliary && cargo test --verbose
+        run: cd auxiliary && cargo nextest --verbose
 
   build:
     runs-on: ubuntu-latest
