@@ -29,6 +29,18 @@ impl Tim3Guard {
             initialized: false,
         })
     }
+    /// Get a reference to the current configuration of the timer.
+    pub fn get_config(&self) -> &TimerConfig {
+        &self.config
+    }
+    /// Check if the timer has been initialized.
+    pub fn is_initialized(&self) -> bool {
+        self.initialized
+    }
+    /// Set the initialized state of the timer.
+    pub fn set_initialized(&mut self, state: bool) {
+        self.initialized = state;
+    }
 }
 
 impl TimerGuard for Tim3Guard {
@@ -39,7 +51,7 @@ impl TimerGuard for Tim3Guard {
     /// Initialize the timer with clock, prescaler, and auto-reload values based on the provided configuration.
     /// Return result to catch configuration errors.
     fn init(&mut self,tim3: &mut TIM3) -> TimXResult<()> {
-        if self.initialized {
+        if self.is_initialized() {
             return Err(TimerError::AlreadyInitialized("TIM3 already initialized"));
         }
         self.config
@@ -49,7 +61,7 @@ impl TimerGuard for Tim3Guard {
         //Step 1:  Set PSC: Prescaler (divides input clock frequency)
         tim3.psc.write(|w| w.psc().bits(psc));
         //Step 2: Set ARR: Auto-reload register (defines the period of the timer)
-        tim3.arr.write(|w| w.arr().bits(arr as u16));
+        tim3.arr.write(|w| w.arr().bits(arr as u16)); // ARR is 16-bit for TIM3
         // Step 3: Enable counter and update event generation
         tim3.cr1.write(|w| {
             w.cen()
@@ -63,12 +75,12 @@ impl TimerGuard for Tim3Guard {
         });
         //Step 4: Enable TIM3 interrupt on update event (UIE)
         tim3.dier.write(|w| w.uie().set_bit());
-        self.initialized = true;
+        self.set_initialized(true);
         Ok(())
     }
     /// Start the timer and enable interrupts.
     fn start(&mut self,tim3: &mut TIM3) -> TimXResult<()> {
-        if !self.initialized {
+        if !self.is_initialized() {
             return Err(TimerError::NotInitialized);
         }
         tim3.cr1.modify(|_, w| w.cen().set_bit());
@@ -77,7 +89,7 @@ impl TimerGuard for Tim3Guard {
 
     /// Stop the timer and disable interrupts.
     fn stop(&mut self,tim3: &mut TIM3) -> TimXResult<()> {
-        if !self.initialized {
+        if !self.is_initialized() {
             return Err(TimerError::NotInitialized);
         }
         tim3.cr1.modify(|_, w| w.cen().clear_bit());
@@ -86,7 +98,7 @@ impl TimerGuard for Tim3Guard {
 
     /// Reset the timer counter to zero
     fn reset(&mut self,tim3: &mut TIM3) -> TimXResult<()> {
-        if !self.initialized {
+        if !self.is_initialized() {
             return Err(TimerError::NotInitialized);
         }
         tim3.cnt.write(|w| w.cnt().bits(0));
@@ -95,15 +107,15 @@ impl TimerGuard for Tim3Guard {
 
     /// Tim3 is a 16-bit timer, so the counter value is u16
     fn get_counter(&mut self,tim3: &mut TIM3) -> TimXResult<u32> {
-        if !self.initialized {
+        if !self.is_initialized() {
             return Err(TimerError::NotInitialized);
         }
         Ok(tim3.cnt.read().cnt().bits() as u32)
     }
 
     /// Check if update interrupt flag (UIF) is set, indicating an update event has occurred.
-    fn is_update_interrupt_flag_set(&mut self,tim3: &mut TIM3) -> TimXResult<bool> {
-        if !self.initialized {
+    fn is_update_interrupt_flag_set(&mut self,tim3: &TIM3) -> TimXResult<bool> {
+        if !self.is_initialized() {
             return Err(TimerError::NotInitialized);
         }
         Ok(tim3.sr.read().uif().bit_is_set())
@@ -117,7 +129,7 @@ impl TimerGuard for Tim3Guard {
     }
     /// Set the update interrupt flag (UIF) start the timer and enable interrupts.
     fn set_update_interrupt_flag(&mut self,tim3: &mut TIM3) -> TimXResult<()> {
-        if !self.initialized {
+        if !self.is_initialized() {
             return Err(TimerError::NotInitialized);
         }
         tim3.sr.modify(|_, w| w.uif().set_bit());
@@ -131,26 +143,26 @@ mod tests {
     use super::*;
     #[test]
     fn test_tim3_guard_initialization() {
-        let config = TimerConfig::new(100_000, 400);
+        let config = TimerConfig::new(100_000, 100);
         let mut tim3_guard = Tim3Guard::new(config).unwrap();
-        assert!(!tim3_guard.initialized);
+        assert!(!tim3_guard.is_initialized());
     }
 
     #[test]
     fn test_tim3_guard_create() {
-        let config = TimerConfig::new(100_000, 400);
+        let config = TimerConfig::new(100_000, 100);
         let mut tim3_guard = Tim3Guard::new(config);
         assert!(tim3_guard.is_ok());
     }
 
     #[test]
     fn test_tim3_get_config() {
-        let config = TimerConfig::new(100_000, 400);
+        let config = TimerConfig::new(100_000, 100);
         let tim3_guard = Tim3Guard::new(config).unwrap();
-        let retrieved_config = &tim3_guard.config;
+        let retrieved_config = tim3_guard.get_config();
         assert_eq!(retrieved_config.cpu_clock_hz, 72_000_000);
         assert_eq!(retrieved_config.target_timer_clock_hz, 100_000);
-        assert_eq!(retrieved_config.interrupt_enable_hz, 400);
+        assert_eq!(retrieved_config.interrupt_enable_hz, 100);
     }
    // TODO: Add more unit tests for start, stop, reset, get_counter, is_update_interrupt_flag_set, clear_update_interrupt_flag, set_update_interrupt_flag
     // Note: I just realized that testing the strictly type-safe Tim3Guard methods is a bit tricky
