@@ -16,7 +16,7 @@ jobs:
       - name: Install Cargo Nexttest
         run: cargo install cargo-nextest
       - name: Run unit tests
-        run: cd auxiliary && cargo nextest --verbose
+        run: cd auxiliary && cargo nextest run --verbose
 
   build:
     runs-on: ubuntu-latest
