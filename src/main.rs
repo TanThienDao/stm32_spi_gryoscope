@@ -8,7 +8,7 @@ use rtic::app;
 // ===== RTIC APP  =====
 
 /// Shared resources (protected by RTIC)
-#[app(device = stm32f3_discovery::stm32f3xx_hal::pac, dispatchers = [EXTI0])]
+#[app(device = stm32f3_discovery::stm32f3xx_hal::pac, dispatchers = [EXTI0, EXTI1])]
 mod app {
     use crate::config::AppConfig;
     use crate::logging::SensorPort;
@@ -23,6 +23,10 @@ mod app {
     use auxiliary::timer::general_purpose_timers::timer_trait::TimerGuard;
     use auxiliary::*;
     use rtic::Mutex;
+    use stm32f3_discovery::leds::{Direction, Leds};
+    use core::f32::consts::PI;
+    use micromath::F32Ext;
+    use stm32f3_discovery::switch_hal::OutputSwitch;
 
     // ===== SHARED RESOURCES =====
     /// Resources shared between tasks (protected by RTIC)
@@ -67,6 +71,7 @@ mod app {
         /// Counter for tracking anomalies
         counter: u32,
         anomaly_counter: u32,
+        leds: Leds,
     }
     // ===== RTIC APP =====
     #[init]
@@ -168,6 +173,28 @@ mod app {
 
         //==============================================================
         // I2C Configuration End
+        //==============================================================
+
+        //==============================================================
+        // LEDs Configuration Start
+        //==============================================================
+
+        // GPIOE already split above, so we can use it to configure the LEDs
+        let leds = Leds::new(
+            gpioe.pe8,  // LD4 (Blue)
+            gpioe.pe9,  // LD3 (Red)
+            gpioe.pe10, // LD5 (Orange)
+            gpioe.pe11, // LD7 (Green)
+            gpioe.pe12, // LD9 (Blue)
+            gpioe.pe13, // LD10 (Red)
+            gpioe.pe14, // LD8 (Orange)
+            gpioe.pe15, // LD6 (Green)
+            &mut gpioe.moder,
+            &mut gpioe.otyper,
+        );
+
+        //==============================================================
+        // LEDs Configuration End
         //==============================================================
 
         let delay = Delay::new(ctx.core.SYST, clocks);
@@ -293,7 +320,7 @@ mod app {
         }
         log_init!(itm, "✓ Gyro configured.");
         log_init!(itm, "✓ Configuration Gyroscope complete:");
-        log_init!(itm, "  - Data Rate: 400 Hz (timer interrupt)");
+        log_init!(itm, "  - Data Rate: 100 Hz (timer interrupt)");
         log_init!(itm, "  - Range: 500 °/s");
         log_init!(itm, "");
 
@@ -363,6 +390,7 @@ mod app {
             anomaly_counter: 0,
             // Local accelerometer and magnetometer driver instance
             accel_mag_driver: accel_mag_driver,
+            leds
         };
 
         (shared, local)
@@ -559,7 +587,7 @@ mod app {
     /// Responsibility: read accelerometer and magnetometer data sensor only.
     #[task(binds = TIM3,
     shared = [sensor_data_accel, sensor_data_mag, itm],
-    local = [accel_mag_driver])]
+    local = [accel_mag_driver, leds])]
     fn accel_mag_task(mut cx: accel_mag_task::Context) {
         if AppConfig::DEBUG_ENABLED {
             log_debug!(cx, "ReadSensor", "🔴 TIM3 interrupt fired!");
@@ -585,6 +613,13 @@ mod app {
             // Update shared resources
             cx.shared.sensor_data_mag.lock(|data| {
                 *data = mag_data;
+                // 1. Determine direction from X and Y.
+                let direction = calculate_compass_direction(mag_data.0, mag_data.1);
+                // 2. Turn off all LEDs then illuminate the LED corresponding to the direction.
+                for led in cx.local.leds.iter_mut() {
+                    led.off().ok();
+                }
+                cx.local.leds.for_direction(direction).on().ok();
             });
         } else {
             log_warn!(cx, "Magnetometer", "✗ Error reading magnetometer data!");
@@ -596,184 +631,32 @@ mod app {
         }
     }
 
-    /*    ///Main processing loop (lower priority than interrupt)
-    /// Processes the data read from the gyroscope and checks for anomalies.
-    todo for some reason spawn no longer works.
-    #[task(
-    priority = 1,
-    shared = [sensor_data, new_data_ready,
-    read_sensor_total_cycles, read_sensor_count,
-    process_data_total_cycles, process_data_count,
-    itm],
-    local = [ prev_data, counter, anomaly_counter])]
-    async fn process_data(mut cx: process_data::Context) {
-        log_info!(cx, "ProcessData", "🔵 process_data ENTERED - task is executing!");
-        let start = DWT::cycle_count();
-
-        // Access shared and local resources
-        let prev_data = cx.local.prev_data;
-        let counter = cx.local.counter;
-        let anomaly_counter = cx.local.anomaly_counter;
-        const MAX_DELTA: f32 = AppConfig::MAX_ANGULAR_VELOCITY_CHANGE;
-
-        // Check if new data is ready
-        log_info!(cx, "ProcessData", "📥 Checking if new data is ready...");
-        let has_data = cx.shared.new_data_ready.lock(|ready| {
-            if *ready {
-                *ready = false;
-                true
-            } else {
-                false
-            }
-        });
-        log_info!(cx, "ProcessData", "📥 has_data={}", has_data);
-        if !has_data {
-            log_info!(cx, "ProcessData", "⏭️  No new data, skipping processing");
-            return;
+    fn calculate_compass_direction(x: f32, y: f32) -> Direction {
+        // atan2 return radians in range [-π, π]
+        let theta = y.atan2(x); // Calculate the angle in radians
+        if theta < -7.0 * PI / 8.0 || theta > 7.0 * PI / 8.0 {
+            Direction::North
+        } else if theta < -5.0 * PI / 8.0 {
+            Direction::NorthWest
+        } else if theta < -3.0 * PI / 8.0 {
+            Direction::West
+        } else if theta < -1.0 * PI / 8.0 {
+            Direction::SouthWest
+        } else if theta < 1.0 * PI / 8.0 {
+            Direction::South
+        } else if theta < 3.0 * PI / 8.0 {
+            Direction::SouthEast
+        } else if theta < 5.0 * PI / 8.0 {
+            Direction::East
+        } else if theta < 7.0 * PI / 8.0 {
+            Direction::NorthEast
+        } else {
+            Direction::North
         }
+    }
 
-        // Read the latest sensor data
-        let (x, y, z) = cx.shared.sensor_data.lock(|data| *data);
 
-        // Consistency check: Compare with previous data
-        let delta_x = (x - prev_data.0).abs();
-        let delta_y = (y - prev_data.1).abs();
-        let delta_z = (z - prev_data.2).abs();
 
-        if delta_x > MAX_DELTA || delta_y > MAX_DELTA || delta_z > MAX_DELTA {
-            *anomaly_counter += 1;
-            log_warn!(
-                cx,
-                "ProcessData",
-                "⚠️  ANOMALY #{}: Δx={:.2}, Δy={:.2}, Δz={:.2}",
-                *anomaly_counter,
-                delta_x,
-                delta_y,
-                delta_z
-            );
-        }
 
-        // Update previous data for the next comparison
-        *prev_data = (x, y, z);
-        // Print every LOG_FREQUENCY iteration to avoid flooding the ITM
-        if *counter % AppConfig::LOG_FREQUENCY == 0 {
-            log_info!(
-                cx,
-                "ProcessData",
-                "X: {:7.2}°/s | Y: {:7.2}°/s | Z: {:7.2}°/s",
-                x,
-                y,
-                z
-            );
-        }
-        *counter += 1;
 
-        if AppConfig::DEBUG_ENABLED {
-            log_debug!(
-                cx,
-                "ProcessData",
-                "counter: {}, read_sensor_count: {}",
-                *counter,
-                cx.shared.read_sensor_count.lock(|count| *count),
-            );
-        }
-
-        // Measure loop performance
-        let end = DWT::cycle_count();
-        let elapsed = end.wrapping_sub(start) as u32;
-
-        // Update process_data performance metrics
-        cx.shared.process_data_total_cycles.lock(|total| {
-            *total += elapsed as u32;
-        });
-        cx.shared.process_data_count.lock(|count| {
-            *count += 1;
-        });
-
-        // Print statistics every 1000 process_data iterations
-        let should_print = cx
-            .shared
-            .process_data_count
-            .lock(|count| *count % AppConfig::STATS_INTERVAL == 0);
-
-        if should_print {
-            let (process_total, process_count, read_total, read_count) =
-                cx.shared.process_data_total_cycles.lock(|pdt| {
-                    cx.shared.process_data_count.lock(|pdc| {
-                        cx.shared.read_sensor_total_cycles.lock(|rst| {
-                            cx.shared
-                                .read_sensor_count
-                                .lock(|rsc| (*pdt, *pdc, *rst, *rsc))
-                        })
-                    })
-                });
-
-            let avg_process_cycles = (process_total / AppConfig::STATS_INTERVAL) as u32;
-            let avg_read_cycles = if read_count > 0 {
-                read_total as f64 / read_count as f64
-            } else {
-                0.0
-            };
-            // Convert cycles to microseconds (72 MHz = 72 cycles per μs)
-            let process_time_us = avg_process_cycles as f64 / 72.0;
-            let read_time_us = avg_read_cycles as f64 / 72.0;
-            let total_time_us = process_time_us + (read_time_us * 400.0); // 400 read_sensor calls per 2.5s
-
-            // Total measurement period: 1000 iterations at 400 Hz
-            // = 1000 / 400 Hz = 2.5 seconds = 2,500,000 microseconds
-            let total_period_us = 2_500_000.0;
-            // CPU Usage = (Time spent executing / Total measurement time) × 100%
-            let cpu_usage = (total_time_us / total_period_us) * 100.0;
-
-            log_stats!(cx, "ProcessData", "");
-            log_stats!(
-                cx,
-                "ProcessData",
-                "────────────────────────────────────────────────────────"
-            );
-            log_stats!(
-                cx,
-                "ProcessData",
-                "📊 System Stats (every {} process_data calls / ~2.5s):",
-                AppConfig::STATS_INTERVAL
-            );
-            log_stats!(
-                cx,
-                "ProcessData",
-                "  Process Data Avg: {:.3}μs ({} calls)",
-                process_time_us,
-                process_count
-            );
-            log_stats!(
-                cx,
-                "ProcessData",
-                "  Read Sensor Avg: {:.3}μs ({} calls)",
-                read_time_us,
-                read_count
-            );
-            log_stats!(cx, "ProcessData", "  Total Time: {:.3}μs", total_time_us);
-            log_stats!(cx, "ProcessData", "  Anomalies: {}", *anomaly_counter);
-            log_stats!(cx, "ProcessData", "  CPU Usage: {:.2}%", cpu_usage);
-            log_stats!(
-                cx,
-                "ProcessData",
-                "────────────────────────────────────────────────────────"
-            );
-            log_stats!(cx, "ProcessData", "");
-
-            // Reset counters for next measurement window
-            cx.shared.process_data_total_cycles.lock(|total| {
-                *total = 0;
-            });
-            cx.shared.process_data_count.lock(|count| {
-                *count = 0;
-            });
-            cx.shared.read_sensor_total_cycles.lock(|total| {
-                *total = 0;
-            });
-            cx.shared.read_sensor_count.lock(|count| {
-                *count = 0;
-            });
-        }
-    }*/
 }
