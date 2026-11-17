@@ -1,657 +1,341 @@
-# STM32F3 Discovery SPI Gyroscope Project - (RTIC)
+# STM32F3 Discovery Multi-Sensor RTIC Project
 
-A Rust embedded systems project for RTIC-based multi-task 3-axis gyroscope sensor (I3G4250D) communication via SPI on an STM32F3 Discovery board with real-time performance monitoring and per-task metrics.
+A high-performance embedded Rust system demonstrating real-time concurrent sensor acquisition on the STM32F3 Discovery board. The system orchestrates an **I3G4250D 3-axis gyroscope** via SPI and an **LSM303AGR 6-axis accelerometer & magnetometer** via I2C using the **RTIC (Real-Time Interrupt-driven Concurrency)** framework, bare-metal hardware timers, custom register-level drivers, and DWT cycle-accurate profiling.
+
 ***
+
 ## 📋 Project Overview
 
-This project demonstrates:
-- **RTIC Framework** - Real-Time Interrupt-driven Concurrency for deterministic multi-task execution
-- **Interrupt-Driven Design** - TIM2 timer generates 400 Hz interrupts for periodic sensor sampling
-- **SPI Communication** - Full-duplex SPI protocol implementation (Mode 3) with DMA-free transfers
-- **Device Identification** - WHO_AM_I register reading to detect gyroscope models (L3GD20, I3G4250D, L3GD20H)
-- **Low-Power Operation** - CPU sleeps during intervals, reducing power consumption to ~0.26% active time
-- **Real-Time Monitoring** - Per-task CPU usage tracking via ARM Cortex-M4 DWT cycle counter
-- **Accurate Measurements** - Separate tracking of `read_sensor` (high-priority ISR) and `process_data` (low-priority task)
-- **Error Handling** - Robust error management and anomaly detection
-- **ITM Debugging** - Real-time debug output via ARM Instrumentation Trace Macrocell
-- **Embedded Rust** - Using `cortex-m`, `embedded-hal`, `cortex-m-rt`, `rtic`, and `stm32f3xx-hal` crates
+This project showcases professional embedded Rust design patterns and real-time concurrency:
+
+- **RTIC Framework (v2)**: Deterministic, zero-cost task scheduling and hardware interrupt binding with compile-time race-free resource sharing.
+- **Dual Hardware Interrupt Architecture**:
+  - **TIM2 Hardware Task (100 Hz)**: Periodically samples the I3G4250D Gyroscope over SPI1.
+  - **TIM3 Hardware Task (100 Hz)**: Periodically samples the LSM303AGR Accelerometer & Magnetometer over I2C1.
+- **Hybrid Bare-Metal Design**:
+  - **Bare-Metal Register Level**: Custom timer drivers (`TIM2`, `TIM3`), direct RCC peripheral clock gating, custom ARM Cortex-M `PRIMASK` critical section, and datasheet-level sensor register drivers.
+  - **HAL Abstraction Level**: Type-safe GPIO pin configuration (`into_af5_push_pull`, `into_af4_open_drain`), SPI1/I2C1 bus peripherals, and RCC clock tree freezing.
+- **Custom Peripheral Drivers**:
+  - In-house driver for **I3G4250D** (SPI Mode 3, 1 MHz, configurable data rate and full-scale range).
+  - In-house driver for **LSM303AGR** (I2C, 100 kHz, multi-register burst reads, two's-complement unit conversions to $g$ and Gauss).
+- **Compile-Time Feature Configuration**: Structured compile-time configuration (`AppConfig`) with Cargo feature flags (`production`, `development`, `debug-logs`, `enable-stats`).
+- **Cycle-Accurate Real-Time Profiling**: Sub-microsecond execution tracking using the ARM Cortex-M4 Data Watchpoint and Trace (DWT) cycle counter.
+- **Low-Power Idle Loop**: CPU enters low-power sleep via `wfi()` (Wait For Interrupt) during idle periods, keeping active duty cycle extremely low.
+- **Multi-Channel ITM Instrumentation**: Real-time non-intrusive logging through the ARM Instrumentation Trace Macrocell (ITM) on the SWO pin with task-aware ANSI colors and microsecond timestamps.
+
 ***
-## 🎯 Supported Devices
 
-| Device | WHO_AM_I | Status | Features |
-|--------|----------|--------|----------|
-| **I3G4250D** | `0xD3` | ✅ Fully Implemented | Primary device, configurable range & data rate |
-| **L3GD20** | `0xD4` | ✅ Detected | Identification only (requires driver implementation) |
-| **L3GD20H** | `0xD7` | ✅ Detected | Identification only (requires driver implementation) |
+## 🎯 Supported Sensors & Identification
 
-**Note:** The project is currently optimized for **I3G4250D**. Support for L3GD20/L3GD20H requires driver enhancements.
+The firmware identifies sensors at startup via their respective `WHO_AM_I` registers:
+
+| Sensor | Subsystem | Bus | Bus Address / CS | WHO_AM_I Value | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **I3G4250D** | 3-Axis Gyroscope | SPI1 | `PE3` (Active Low) | `0xD3` | ✅ Fully Implemented (Custom Driver) |
+| **LSM303AGR (Accel)** | 3-Axis Accelerometer | I2C1 | `0x19` | `0x33` | ✅ Fully Implemented (Custom Driver) |
+| **LSM303AGR (Mag)** | 3-Axis Magnetometer | I2C1 | `0x1E` | `0x40` | ✅ Fully Implemented (Custom Driver) |
+| **L3GD20** | Gyroscope | SPI1 | `PE3` | `0xD4` | 🔍 Auto-Detected Variant |
+| **L3GD20H** | Gyroscope | SPI1 | `PE3` | `0xD7` | 🔍 Auto-Detected Variant |
+
 ***
-## 🛠️ Hardware Setup
 
-### Required Components
-- STM32F3-Discovery board
-- L3GD20 / I3G4250D / L3GD20H gyroscope module
-- ST-Link V2 debugger (for flashing and debugging)
-- USB cable for power and debugging
+## 🛠️ Hardware Setup & Pin Mapping
 
-### Wiring Configuration
+### 1. SPI1 Interface (I3G4250D Gyroscope)
+| Signal | STM32F3 Pin | Mode / Alternate Function | Description |
+| :--- | :--- | :--- | :--- |
+| **SCK** | `PA5` | AF5 (Push-Pull, High Speed) | SPI1 Serial Clock |
+| **MISO** | `PA6` | AF5 (Push-Pull, High Speed) | Master In, Slave Out |
+| **MOSI** | `PA7` | AF5 (Push-Pull, High Speed) | Master Out, Slave In |
+| **CS** | `PE3` | GPIO Output (Push-Pull) | Chip Select (Active Low) |
 
-#### SPI Pins (SPI1)
-| Signal | STM32F3 Pin | Function |
-|--------|------------|----------|
-| **SCK** | PA5 | SPI Clock |
-| **MISO** | PA6 | Master In, Slave Out |
-| **MOSI** | PA7 | Master Out, Slave In |
-| **CS** | PE3 | Chip Select (Active Low) |
+- **SPI Mode**: Mode 3 (Clock Polarity: `IdleHigh`, Clock Phase: `CaptureOnSecondTransition`)
+- **Baud Rate**: 1.0 MHz
 
+### 2. I2C1 Interface (LSM303AGR Accelerometer & Magnetometer)
+| Signal | STM32F3 Pin | Mode / Alternate Function | Description |
+| :--- | :--- | :--- | :--- |
+| **SCL** | `PB6` | AF4 (Open-Drain, Pull-Up) | I2C1 Serial Clock |
+| **SDA** | `PB7` | AF4 (Open-Drain, Pull-Up) | I2C1 Serial Data |
 
-### SPI Mode Configuration
-- **Polarity (CPOL)**: Idle High
-- **Phase (CPHA)**: Capture on Second Transition
-- **Clock Speed**: 1 MHz
-- **Mode**: SPI Mode 3
+- **I2C Speed**: 100 kHz Standard Mode
 
-### TIM2 Timer Configuration (Interrupt-Driven Sampling)
-| Parameter | Value | Purpose |
-|-----------|-------|---------|
-| **CPU Clock** | 72 MHz | STM32F303VC system clock |
-| **Prescaler (PSC)** | 719 | Divides 72 MHz to 100 kHz timer frequency |
-| **Auto-Reload (ARR)** | 249 | Defines interrupt period (2.5 ms) |
-| **Interrupt Frequency** | 400 Hz | Gyroscope sensor sampling rate |
-| **IRQ Number** | 35 | NVIC interrupt request line for TIM2 |
-| **Timer Tick** | 10 µs | Resolution of timer counter |
+### 3. Hardware Timers Configuration (Register-Level)
 
-**Calculation:**
-```
-Timer Frequency = CPU Clock / (PSC + 1) = 72 MHz / 720 = 100 kHz
-Interrupt Period = (ARR + 1) / Timer Frequency = 250 / 100 kHz = 2.5 ms
-Interrupt Frequency = 1 / 2.5 ms = 400 Hz
-```
+Both timers are clocked from the APB1 timer clock domain ($72\text{ MHz}$):
+
+| Parameter | TIM2 (Gyroscope Task) | TIM3 (Accel/Mag Task) | Purpose |
+| :--- | :--- | :--- | :--- |
+| **Input Clock** | 72 MHz | 72 MHz | System Clock |
+| **Prescaler (PSC)** | 719 | 719 | Divides clock to 100 kHz ($10\ \mu\text{s}$ tick) |
+| **Auto-Reload (ARR)** | 999 | 999 | 100 Hz interrupt period ($10\text{ ms}$) |
+| **IRQ Binding** | `TIM2` (IRQ 28) | `TIM3` (IRQ 29) | Bound directly to RTIC hardware tasks |
+
+$$\text{Timer Frequency} = \frac{72\text{ MHz}}{719 + 1} = 100\text{ kHz}$$
+$$\text{Interrupt Period} = \frac{999 + 1}{100\text{ kHz}} = 10\text{ ms} \implies 100\text{ Hz}$$
+
 ***
-## 🚀 Getting Started
 
-### Prerequisites
-```bash
-# Install Rust and embedded tools
-rustup target add thumbv7em-none-eabihf
-cargo install cargo-embed
+## 📡 RTIC System Architecture
+
+```
+                               ┌────────────────────────────────┐
+                               │   72 MHz Cortex-M4 Core Clock   │
+                               └───────────────┬────────────────┘
+                                               │
+                       ┌───────────────────────┴───────────────────────┐
+                       ▼                                               ▼
+         ┌───────────────────────────┐                   ┌───────────────────────────┐
+         │     TIM2 Hardware Timer   │                   │     TIM3 Hardware Timer   │
+         │   (100 Hz / Every 10 ms)  │                   │   (100 Hz / Every 10 ms)  │
+         └─────────────┬─────────────┘                   └─────────────┬─────────────┘
+                       │ IRQ TIM2                                      │ IRQ TIM3
+                       ▼                                               ▼
+         ┌───────────────────────────┐                   ┌───────────────────────────┐
+         │ #[task(binds = TIM2)]     │                   │ #[task(binds = TIM3)]     │
+         │ fn gyroscope_task(...)    │                   │ fn accel_mag_task(...)    │
+         ├───────────────────────────┤                   ├───────────────────────────┤
+         │ • Clear TIM2 UIF flag     │                   │ • Clear TIM3 UIF flag     │
+         │ • SPI Read: I3G4250D      │                   │ • I2C Read: LSM303AGR     │
+         │ • Check Anomaly (> 100°/s)│                   │ • Convert to g and Gauss  │
+         │ • Update sensor_data      │                   │ • Update sensor_data_accel│
+         │ • Cycle count & statistics│                   │   & sensor_data_mag       │
+         └─────────────┬─────────────┘                   └─────────────┬─────────────┘
+                       │                                               │
+                       └───────────────────────┬───────────────────────┘
+                                               │ Updates Protected Resources
+                                               ▼
+                                 ┌───────────────────────────┐
+                                 │      RTIC Mutex Shared    │
+                                 │      • sensor_data (Gyro) │
+                                 │      • sensor_data_accel  │
+                                 │      • sensor_data_mag    │
+                                 │      • itm (Trace Macro)  │
+                                 └─────────────┬─────────────┘
+                                               │
+                                               ▼
+                                 ┌───────────────────────────┐
+                                 │       #[idle] Task        │
+                                 │   • Lowest Priority (0)   │
+                                 │   • asm::wfi() (Sleep)    │
+                                 │   • CPU sleeps ~99% time  │
+                                 └───────────────────────────┘
 ```
 
-### Building the Project
-```bash
-# Build for release (optimized)
-cargo build --release
-
-# Build for debug
-cargo build
-```
-
-### Flashing to Hardware
-```bash
-# Using cargo-embed
-cargo embed --release
-
-# Or with OpenOCD manually
-openocd -f openocd.gdb
-```
 ***
-## 📡 System Architecture (RTIC-Based)
 
-### Multi-Task Interrupt-Driven Data Flow
-
-```
-┌─────────────────────────────────────────────────────────┐
-│ TIM2 Timer (72 MHz CPU clock)                           │
-│  ├─ Prescaler: Divides 72 MHz → 100 kHz                 │
-│  ├─ Auto-Reload: Counts 0-249 (250 ticks)               │
-│  └─ Period: 2.5 ms (every 250 × 10 µs)                  │
-└─────────────────────┬───────────────────────────────────┘
-                      │ Interrupt fires every 2.5 ms
-                      ▼
-┌─────────────────────────────────────────────────────────┐
-│ HIGH PRIORITY Task: read_sensor (binds to TIM2)         │
-│  ├─ Runs immediately on interrupt                       │
-│  ├─ Reads gyroscope via SPI (~16.2 μs)                  │
-│  ├─ Updates shared sensor_data                          │
-│  ├─ Spawns process_data task                            │
-│  └─ Execution: 400 times per 2.5 seconds               │
-└─────────────────────┬───────────────────────────────────┘
-                      │ Spawns async task
-                      ▼
-┌─────────────────────────────────────────────────────────┐
-│ LOW PRIORITY Task: process_data (async, priority=1)     │
-│  ├─ Processes gyroscope data                            │
-│  ├─ Checks for anomalies                                │
-│  ├─ Monitors consistency (~26.6 μs)                     │
-│  ├─ Prints statistics every 1000 calls                  │
-│  └─ Execution: 400 times per 2.5 seconds               │
-└─────────────────────┬───────────────────────────────────┘
-                      │
-                      ▼
-┌─────────────────────────────────────────────────────────┐
-│ IDLE Task (Lowest Priority)                             │
-│  ├─ Runs when no tasks pending                          │
-│  ├─ Executes wfi() (Wait For Interrupt)                 │
-│  └─ CPU sleeps 99.74% of the time                       │
-└─────────────────────────────────────────────────────────┘
-
-RTIC Scheduler: Ensures high-priority tasks preempt lower-priority ones
-Result: Deterministic, real-time execution with minimal latency!
-```
-
-### RTIC Task Priority Hierarchy
-
-| Task | Priority | Trigger | Execution Time |
-|------|----------|---------|---|
-| **read_sensor** | Hardware (highest) | TIM2 interrupt | ~16.2 μs |
-| **process_data** | 1 | Spawned by read_sensor | ~26.6 μs |
-| **idle** | 0 (lowest) | No pending tasks | CPU sleep |
-
-### Shared Resources & Synchronization
-
-```rust
-#[shared]
-struct Shared {
-    sensor_data: (f32, f32, f32),           // X, Y, Z angular velocities
-    new_data_ready: bool,                   // Data availability flag
-    read_sensor_total_cycles: u32,          // Cumulative execution cycles
-    read_sensor_count: u32,                 // Number of executions
-    process_data_total_cycles: u32,         // Cumulative execution cycles
-    process_data_count: u32,                // Number of executions
-}
-```
-
-All shared resources are automatically protected by RTIC's lock mechanism (critical sections).
-
-
-**Sequence:**
-1. Pull CS Low - Select the device
-2. Send Address Byte - `0x0F | 0x80` (Register address with read bit)
-3. Receive Data - Device responds with ID byte
-4. Pull CS High - Deselect the device
-5. Match Result - Compare ID against known values
-
-**Full-Duplex Transfer Example:**
-```
-Buffer Before:  [0x8F, 0x00]  (address with read bit, dummy)
-Buffer After:   [0x8F, 0xD3]  (echoed address, device ID for I3G4250D)
-```
-***
 ## 📚 Project Structure
 
 ```
 stm32_spi_gryoscope/
 ├── .cargo/
-│   └── config.toml                 # Cargo configuration for embedded targets
+│   └── config.toml                         # Target definition (thumbv7em-none-eabihf) & runner
 ├── .github/
 │   └── workflows/
-│       └── build.yml               # GitHub Actions build workflow
-├── .gitignore                      # Git ignore rules
-├── src/
-│   └── main.rs                     # RTIC app with read_sensor & process_data tasks
-├── auxiliary/                      # Support library crate for hardware abstraction
-│   ├── Cargo.toml                  # Auxiliary crate manifest and dependencies
+│       └── build.yml                       # CI pipeline for embedded target builds
+├── Cargo.toml                              # Workspace & package manifest, features & profiles
+├── Cargo.lock                              # Dependency lockfile
+├── openocd.cfg                             # OpenOCD board & interface configuration
+├── openocd.gdb                             # GDB script configuring ITM / SWO logging
+│
+├── src/                                    # Application Crate (RTIC Application)
+│   ├── main.rs                             # RTIC app: init, idle, gyroscope_task, accel_mag_task
+│   ├── config.rs                           # AppConfig compile-time settings & feature assertions
+│   ├── critical_section_impl.rs            # Custom Cortex-M PRIMASK critical section implementation
+│   └── logging.rs                          # Task-aware, multi-port ANSI color ITM logging
+│
+├── auxiliary/                              # Hardware Abstraction & Driver Crate
+│   ├── Cargo.toml                          # Auxiliary crate manifest
 │   ├── src/
-│   │   ├── lib.rs                  # Library root with public module exports
-│   │   ├── gyro_driver.rs          # I3G4250D gyroscope driver with SPI communication
-│   │   ├── interrupt_handler.rs    # RTIC interrupt coordination
-│   │   ├── nvic.rs                 # NVIC interrupt controller management
-│   │   └── timer/
-│   │       ├── mod.rs              # Timer module exports
-│   │       └── tim2.rs             # TIM2 timer configuration (prescaler, ARR, ISR handling)
+│   │   ├── lib.rs                          # Peripheral initializers, variant detection
+│   │   ├── gyroscope_driver.rs             # Custom I3G4250D SPI register driver
+│   │   ├── timer/
+│   │   │   ├── mod.rs                      # Timer module exports & TimerConfig
+│   │   │   ├── tim2.rs                     # High-level Tim2 helpers
+│   │   │   └── general_purpose_timers/     # Bare-metal PAC timer implementations
+│   │   │       ├── mod.rs
+│   │   │       ├── timer_trait.rs          # TimerGuard trait definition
+│   │   │       ├── tim2.rs                 # Tim2Guard (PAC register writes: PSC, ARR, CR1, DIER, SR)
+│   │   │       └── tim3.rs                 # Tim3Guard (PAC register writes: PSC, ARR, CR1, DIER, SR)
+│   │   └── accelerometer_magnetometer_driver/
+│   │       ├── mod.rs
+│   │       ├── registers/                  # LSM303AGR Register maps
+│   │       │   ├── mod.rs
+│   │       │   ├── accelerometer_registers.rs
+│   │       │   └── magnetometer_registers.rs
+│   │       └── driver/                     # Custom LSM303AGR I2C driver
+│   │           ├── mod.rs
+│   │           ├── accl_mag_driver.rs      # High-level sensor coordination & burst reads
+│   │           ├── accel_config.rs         # Accel data rates, ranges, operating modes
+│   │           ├── mag_config.rs           # Mag data rates, power modes, continuous mode
+│   │           └── accel_data.rs           # Accel raw and scaled measurement containers
 │   └── tests/
-│       └── integration_tests.rs    # Integration tests for hardware initialization
-├── docs/                           # Comprehensive technical documentation
-│   ├── ...
-│   ├── SPI_Full_Duplex_Explained.md # Full-duplex SPI communication protocol
-│   └── Screenshots/                # Hardware configuration and datasheet references
-├── Cargo.toml                      # Main project manifest with dependencies
-├── Cargo.lock                      # Locked dependency versions
-├── LICENSE                         # MIT License
-├── openocd.gdb                     # OpenOCD debugger configuration
-├── openocd.cfg                     # OpenOCD hardware configuration
-├── README.md                       # This file
-├── *.log                           # Debug and instrumentation trace logs
-└── .git/                           # Git repository
-```
-***
-## 🔧 Key Functions and Structs (RTIC-Based)
-
-### RTIC App Structure
-```rust
-#[app(device = stm32f3_discovery::stm32f3xx_hal::pac, dispatchers = [EXTI0])]
-mod app {
-    #[shared]
-    struct Shared { /* Shared resources */ }
-    
-    #[local]
-    struct Local { /* Per-task local resources */ }
-    
-    #[init]
-    fn init(ctx: init::Context) -> (Shared, Local) { /* Initialize hardware */ }
-    
-    #[idle]
-    fn idle(cx: idle::Context) -> ! { /* Low-priority idle task */ }
-    
-    #[task(binds = TIM2, shared = [...], local = [...])]
-    fn read_sensor(cx: read_sensor::Context) { /* High-priority interrupt task */ }
-    
-    #[task(priority = 1, shared = [...], local = [...])]
-    async fn process_data(cx: process_data::Context) { /* Low-priority async task */ }
-}
-```
-
-### `#[init]` - Hardware Initialization Task
-```rust
-#[init]
-fn init(mut ctx: init::Context) -> (Shared, Local) {
-    // Configures:
-    // - RCC (clock system)
-    // - GPIO (SPI pins: PA5/PA6/PA7, CS: PE3)
-    // - SPI1 (1 MHz, Mode 3 - IdleHigh, CaptureOnSecondTransition)
-    // - TIM2 (400 Hz periodic interrupts)
-    // - DWT (cycle counter for performance measurement)
-    // Returns: Shared and Local resource structures
-}
-```
-
-### `#[task(binds = TIM2)]` - High-Priority Interrupt Task
-```rust
-#[task(binds = TIM2, 
-       shared = [sensor_data, new_data_ready, read_sensor_total_cycles, read_sensor_count],
-       local = [gyro])]
-fn read_sensor(mut cx: read_sensor::Context) {
-    // Executes every 2.5 ms when TIM2 interrupt fires
-    // ├─ Measures execution time with DWT cycle counter
-    // ├─ Reads gyroscope via SPI (~16.2 μs average)
-    // ├─ Updates shared sensor_data with (x, y, z)
-    // ├─ Sets new_data_ready flag
-    // ├─ Spawns process_data task
-    // └─ Accumulates execution statistics
-}
-```
-
-### `#[task(priority = 1)]` - Low-Priority Async Task
-```rust
-#[task(priority = 1,
-       shared = [sensor_data, new_data_ready, ...metrics...],
-       local = [itm, prev_data, counter, anomaly_counter])]
-async fn process_data(mut cx: process_data::Context) {
-    // Spawned by read_sensor after each interrupt
-    // ├─ Measures execution time with DWT cycle counter
-    // ├─ Waits for new_data_ready flag
-    // ├─ Reads sensor_data from shared buffer
-    // ├─ Checks for anomalies (delta > 100.0 °/s threshold)
-    // ├─ Prints readings every 4th iteration (~10 ms)
-    // ├─ Accumulates execution statistics
-    // └─ Prints statistics every 1000 calls (~2.5 seconds)
-}
-```
-
-### `#[idle]` - Lowest Priority Idle Task
-```rust
-#[idle(shared = [sensor_data, new_data_ready])]
-fn idle(cx: idle::Context) -> ! {
-    // Runs when no other tasks are pending
-    // └─ Executes asm::wfi() to put CPU into sleep mode
-    // Result: CPU sleeps 99.74% of the time!
-}
-```
-
-### Timer Configuration (`Tim2Guard`)
-```rust
-pub struct Tim2Guard {
-    initialized: bool,
-}
-
-impl Tim2Guard {
-    pub fn new() -> Self                              // Create new guard
-    pub fn init(&mut self, tim2: &mut TIM2)           // Initialize TIM2 once
-    pub fn config_tim2(&mut self, psc: u16, arr: u32) // Configure timer registers
-    pub fn calculate_timer_values(...) -> (u16, u32)  // Calculate PSC and ARR
-    pub fn check_and_clear_uif() -> bool              // Clear interrupt flag safely
-}
-```
-
-### Logging Module (`logging.rs`)
-```rust
-pub enum LogColor {
-    Cyan,           // Init/Setup
-    CHARTREUSE,     // ReadSensor (data acquisition)
-    SKY,            // ProcessData (processing)
-    Honey,          // Errors/Anomalies
-    Magenta,        // Stats/Performance
-    Orange,         // Debugging
-    Blue,           // Info
-    Yellow,         // Warnings
-    Red,            // Error
-    None,           // Default
-}
-
-// Logging macros:
-log_init!(itm, "message")                    // Initialization logs (init task only)
-log_info!(cx, "TaskName", "message")         // Info level with task color
-log_debug!(cx, "TaskName", "message")        // Debug level output
-log_warn!(cx, "TaskName", "message")         // Warning with yellow color
-log_error!(cx, "TaskName", "message")        // Error with red color
-log_stats!(cx, "TaskName", "message")        // Statistics with magenta color
-log_custom!(cx, "TaskName", color, "message") // Custom color logging
-
-pub fn format_timestamp() -> (u8, u8, u8, u16, u16)  // Returns (h, m, s, ms, us)
-```
-
-**Features:**
-- **Task-Aware Colors:** Automatically colors logs based on task name (Init, ReadSensor, ProcessData, Idle)
-- **Real-Time Timestamps:** Uses DWT cycle counter for microsecond-precision timing
-- **ANSI Color Codes:** Terminal output with 256-color support
-- **Thread-Safe:** All logging protected by RTIC's Mutex around ITM
-- **Multiple Log Levels:** INFO, DEBUG, WARN, ERROR, STATS with distinct formatting
-- **ITM Integration:** All output via ARM Instrumentation Trace Macrocell (SWO pin)
-
-**Timestamp Format:** `[HH:MM:SS.mmm.μμμ]` (Hours:Minutes:Seconds.Milliseconds.Microseconds)
-
-### Gyroscope Driver (`GyroDriver`)
-```rust
-pub struct GyroDriver<SPI, CS> {
-    spi: SPI,
-    cs: CS,
-    // ... internal state ...
-}
-
-impl<SPI, CS> GyroDriver<SPI, CS> {
-    pub fn new(spi: SPI, cs: CS) -> Self                              // Create driver
-    pub fn init(&mut self) -> Result<(), &'static str>                // Initialize sensor
-    pub fn who_am_i(&mut self) -> Result<u8, Error>                  // Read ID register
-    pub fn set_data_rate(&mut self, rate: DataRate) -> Result        // Set sampling rate
-    pub fn set_range(&mut self, range: Range) -> Result              // Set sensitivity
-    pub fn read_angular_velocity(&mut self) -> Result<(f32, f32, f32)>  // Read X,Y,Z values
-}
-```
-
-### Device Detection
-```rust
-pub fn detect_gyroscope<SPI, CS, E>(spi: &mut SPI, cs: &mut CS) -> Result<GyroVariant, E>
-where
-    SPI: Transfer<u8, Error = E>,
-    CS: OutputPin,
-{
-    // Reads WHO_AM_I register (0x0F)
-    // Returns: I3g4250d (0xD3), L3gd20 (0xD4), L3gd20h (0xD7), or Unknown(u8)
-}
-```
-***
-## 📖 Technical Details
-
-For detailed information about fixes applied, compilation issues resolved, and design decisions, see [FIXES.md](docs/FIXES.md).
-
-### Key Technical Points:
-- **Trait Versions**: embedded_hal 0.2.x vs 1.0.x compatibility
-- **HAL Methods**: Using `transfer()` instead of missing `write_read()`
-- **Static Lifetimes**: Return type requires `&'static str` for error messages
-- **SPI Mode 3**: Specific polarity/phase configuration for L3GD20
-
-## 📊 Measurement & Performance Metrics (Phase RTIC)
-
-### Per-Task Execution Tracking
-
-The system independently measures both task executions using the DWT cycle counter:
-
-**read_sensor (High-Priority):**
-```
-- Called: 400 times per 2.5 seconds (every 2.5 ms)
-- Avg Execution: ~16.2 μs per call
-- Total Time: 16.2 μs × 400 = 6,480 μs per window
-```
-
-**process_data (Low-Priority):**
-```
-- Called: 400 times per 2.5 seconds (spawned by each read_sensor)
-- Avg Execution: ~26.6 μs per call
-- Total Time: 26.6 μs × 1000 calls = 26,600 μs per window (reported every 1000 calls)
-```
-
-### Total CPU Usage Calculation
-
-```
-Total Active Time = (Process Data Time) + (Read Sensor Time)
-                  = 26.6 μs + (16.2 μs × 400)
-                  = 26.6 μs + 6,480 μs
-                  = 6,506.6 μs per 2.5s window
-
-Total Measurement Period = 2.5 seconds = 2,500,000 μs
-
-CPU Usage = (Total Active Time / Total Period) × 100%
-          = (6,506.6 / 2,500,000) × 100%
-          = 0.26% ✓
-
-CPU Idle = 100% - 0.26% = 99.74% (sleeping with wfi())
+│       └── integration_tests.rs            # Hardware initialization integration tests
+│
+└── docs/                                   # Architecture & Technical Documentation
+    ├── Rust_Embedded_Crate_Hierarchy.md    # Guide to PAC, HAL, BSP, and Core crates
+    ├── SPI_Full_Duplex_Explained.md        # Full-duplex SPI protocol explanation
+    ├── Data_Rate_Bit_Shifting_Explained.md # Bit shifting and register manipulation guide
+    ├── datasheet/                          # Sensor datasheets for I3G4250D and LSM303AGR and more
+    └── Screenshots/                        # Logic analyzer captures and terminal logs
+    ***
 ```
 
 ***
-## 📝 Logging System
 
-### Overview
-The project uses a comprehensive **task-aware logging module** (`src/logging.rs`) that provides real-time, color-coded debug output via ARM Instrumentation Trace Macrocell (ITM) on the SWO pin.
+## ⚙️ Compile-Time Configuration (`AppConfig`)
 
-### Logging Features
+The project uses Cargo features to configure functionality at compile time without runtime penalties. Controlled in [src/config.rs](src/config.rs):
 
-| Feature | Description                                                                                                  |
-|---------|--------------------------------------------------------------------------------------------------------------|
-| **Task-Aware Colors** | Automatically assigns colors based on task (Init=Cyan, ReadSensor=Green, ProcessData=Blue, Idle=HoneyYellow) |
-| **Real-Time Timestamps** | Microsecond-precision using DWT cycle counter: `[HH:MM:SS.mmm.μμμ]`                                          |
-| **Multiple Log Levels** | INFO, DEBUG, WARN, ERROR, STATS with distinct formatting                                                     |
-| **Thread-Safe** | All logging protected by RTIC Mutex around ITM                                                               |
-| **ITM Integration** | Output via SWO pin (stimulus port 0)                                                                         |
-| **ANSI Color Codes** | 256-color terminal support for rich output                                                                   |
+### Available Features
+- `production` (default): Optimizes binary, enables statistics tracking, disables verbose debug logging.
+- `development`: Enables both verbose `debug-logs` and `enable-stats`.
+- `debug-logs`: Compiles verbose debug trace calls into the firmware.
+- `enable-stats`: Compiles DWT performance calculations and periodic statistics reporting.
 
-### Available Logging Macros
-
+### Safety Assertion
+A compile-time assertion prevents accidental debug overhead in production:
 ```rust
-// ========== Initialization Task Only ==========
-log_init!(itm, "Gyro initialized successfully");
-// Output: [00:00:00.001.234] - [Init        ] [Info ] Gyro initialized successfully
-
-// ========== Regular Tasks (with context) ==========
-log_info!(cx, "ReadSensor", "Reading gyro data...");
-// Output: [00:00:00.002.567] - [ReadSensor  ] [INFO ] Reading gyro data...
-
-log_debug!(cx, "ProcessData", "Delta X: {:.2}", delta_x);
-// Output: [00:00:00.003.890] - [ProcessData ] [DEBUG] Delta X: 5.67
-
-log_warn!(cx, "ProcessData", "⚠️  ANOMALY #{}: Δx={:.2}", count, delta_x);
-// Output: [00:00:00.004.123] - [ProcessData ] [WARN ] ⚠️  ANOMALY #1: Δx=150.45
-
-log_error!(cx, "ReadSensor", "SPI communication failed!");
-// Output: [00:00:00.005.456] - [ReadSensor  ] [ERROR] SPI communication failed!
-
-log_stats!(cx, "ProcessData", "CPU Usage: {:.2}%", usage);
-// Output: [00:00:00.006.789] - [ProcessData ] [Stats] CPU Usage: 0.26%
-
-log_custom!(cx, "Init", LogColor::Magenta, "Custom message");
-// Output: [00:00:00.007.012] - [Init        ] [CUSTOM] Custom message
+#[cfg(all(feature = "production", feature = "debug-logs"))]
+compile_error!("Cannot enable debug logs in production build. Use --feature development instead.");
 ```
 
-### Color Mapping
+### Configuration Constants
+| Constant | Default Value | Description |
+| :--- | :--- | :--- |
+| `MAX_ANGULAR_VELOCITY_CHANGE` | `100.0 °/s` | Threshold for detecting abrupt gyro anomalies |
+| `LOG_FREQUENCY` | `4` iterations | Frequency of sensor readouts |
+| `STATS_INTERVAL` | `1000` iterations | Interval for reporting performance summaries (~10 s) |
 
-| Task | Color | ANSI Code | Use Case |
-|------|-------|-----------|----------|
-| **Init** | Cyan | `\x1b[36m` | Initialization and setup messages |
-| **ReadSensor** | Chartreuse (Bright Green) | `\x1b[32;1m` | Sensor data acquisition |
-| **ProcessData** | Sky (Bright Blue) | `\x1b[34;1m` | Data processing and analysis |
-| **Idle** | Honey (Bright Yellow) | `\x1b[33;1m` | Idle task messages |
-| **DEBUG** | Orange | `\x1b[38;5;208m` | Detailed debug information |
-| **INFO** | Blue | `\x1b[34m` | General information |
-| **WARN** | Yellow | `\x1b[33m` | Warnings and anomalies |
-| **ERROR** | Red | `\x1b[31m` | Errors and failures |
-| **STATS** | Magenta | `\x1b[35m` | Performance statistics |
+***
 
-### Timestamp Format
-The `format_timestamp()` function converts DWT cycle counts to human-readable format:
+## 🚀 Building & Flashing
 
-```rust
-// CPU Clock: 72 MHz
-// Calculation:
-let cycles = DWT::cycle_count();           // e.g., 123,456,789 cycles
-let total_seconds = cycles / 72_000_000;   // Convert to seconds (1.714s)
-let millis = (cycles / 72_000) % 1000;     // Extract milliseconds (714 ms)
-let micros = (cycles / 72) % 1000;         // Extract microseconds (123 μs)
-// Result: [00:00:01.714.123] (1 second, 714 milliseconds, 123 microseconds)
+### Prerequisites
+```bash
+# 1. Install Rust toolchain and Cortex-M4 target
+rustup target add thumbv7em-none-eabihf
+
+# 2. Install cargo-embed or OpenOCD + GDB
+cargo install cargo-embed
 ```
 
-### ITM Configuration
-Output is configured in `openocd.gdb`:
-```
-monitor tpiu config internal itm.log uart off 8000000
-monitor itm port 0 on
-```
+### Build Commands
+```bash
+# Build for release (production mode)
+cargo build --release
 
-This routes all `iprintln!` output to stimulus port 0 and saves to `itm.log`.
+# Build for development (with debug logs enabled)
+cargo build --features development
 
-### Usage Examples
-
-**In init task:**
-```rust
-log_init!(itm, "Step 1: Initializing SPI...");
-log_init!(itm, "✓ SPI initialized at 1 MHz");
+# Verify without building binary
+cargo check
 ```
 
-**In interrupt task:**
-```rust
-#[task(binds = TIM2, shared = [itm], local = [gyro])]
-fn read_sensor(mut cx: read_sensor::Context) {
-    log_info!(cx, "ReadSensor", "TIM2 interrupt fired");
-    if let Ok((x, y, z)) = cx.local.gyro.read_angular_velocity() {
-        log_debug!(cx, "ReadSensor", "X: {:.2}°/s", x);
-    } else {
-        log_error!(cx, "ReadSensor", "Failed to read gyro");
-    }
-}
-```
+### Flashing to Hardware
+```bash
+# Option A: Using OpenOCD and GDB with ITM trace logging
+openocd -f openocd.cfg
 
-**In async task:**
-```rust
-#[task(priority = 1, shared = [itm])]
-async fn process_data(mut cx: process_data::Context) {
-    if anomaly_detected {
-        log_warn!(cx, "ProcessData", "⚠️  Anomaly detected: {}", description);
-    }
-    
-    if iteration % 1000 == 0 {
-        log_stats!(cx, "ProcessData", "CPU Usage: {:.2}%", cpu_usage);
-    }
-}
+# In a separate terminal:
+arm-none-eabi-gdb -x openocd.gdb target/thumbv7em-none-eabihf/release/stm32_spi_gryoscope
+
+# Option B: Using cargo-embed
+cargo embed --release
 ```
 
 ***
-## 📝 Expected Output
 
-### Successful Phase 3 RTIC Initialization
+## 📝 Multi-Channel ITM Logging
+
+Logging is performed over the ARM Cortex-M **Instrumentation Trace Macrocell (ITM)**, outputting to stimulus ports over the SWO pin without halting CPU execution.
+
+### Task & Sensor Color Scheme
+| Task / Subsystem | Color | ANSI Code | Purpose |
+| :--- | :--- | :--- | :--- |
+| **Init** | Cyan | `\x1b[36m` | System setup and sensor verification |
+| **Gyroscope** | Bright Green | `\x1b[32;1m` | Gyroscope data acquisition & anomalies |
+| **Accelerometer** | Bright Purple | `\x1b[35;1m` | Accelerometer g-force measurements |
+| **Magnetometer** | Bright Teal | `\x1b[36;1m` | Magnetometer Gauss field readings |
+| **Idle** | Honey Yellow | `\x1b[33;1m` | Low-power idle state notifications |
+| **Warning** | Yellow | `\x1b[33m` | Sensor anomalies or communication retries |
+| **Stats** | Magenta | `\x1b[35m` | Cycle times, average latencies, CPU usage |
+
+### Logging Macros
+```rust
+log_init!(itm, "System initialized");
+log_info!(cx, "Gyroscope", "✓ Sensor data: X: {:7.2}°/s | Y: {:7.2}°/s | Z: {:7.2}°/s", x, y, z);
+log_info!(cx, "Accelerometer", "✓ Read accelerometer data: X: {:7.2}g | Y: {:7.2}g | Z: {:7.2}g", ax, ay, az);
+log_info!(cx, "Magnetometer", "✓ Read magnetometer data: X: {:7.2}G | Y: {:7.2}G | Z: {:7.2}G", mx, my, mz);
+log_warn!(cx, "Gyroscope", "⚠️ ANOMALY #1: Δx=120.45, Δy=2.10, Δz=0.50");
+log_stats!(cx, "Gyroscope", "CPU Usage: {:.2}%", cpu_usage);
 ```
-===============================
-Phase 3: RTIC-based I3G4250D Gyroscope
-===============================
 
-Step 1: Detect Gyro driver...
+***
+
+## 📊 Expected Output
+
+### Startup & Hardware Detection
+```text
+==============================================================
+Phase 3: RTIC-based I3G4250D Gyroscope & LSM303AGR IMU
+==============================================================
+--------------------------------------------------------------
+📋 Configuration Loaded:
+ Debug Logs: false
+ Stats Enabled: true
+ Max Angular Velocity Change: 100°/s
+ Log Frequency: Every 4 iterations
+ Stats Interval: Every 1000 iterations
+--------------------------------------------------------------
+Step 1.1: Detect Gyro driver...
 ✓ Gyro driver initialized.
 ✓ Gyro ID: 0xD3 (I3G4250D)
 
-Step 2: Init Gyro driver...
-✓ Gyro driver initialized.
+Step 1.2: Detect Magnetometer driver...
+✓ Accelerometer ID: 0x33 (LSM303AGR)
+✓ Magnetometer ID: 0x40 (LSM303AGR)
 
-Step 3: Configuring Gyro...
-✓ Gyro configured).
-✓ Configuration complete:
-  - Data Rate: 400 Hz (timer interrupt)
+Step 2.1: Init Gyro driver...
+✓ Gyro driver initialized.
+ Configuring Gyro...
+✓ Gyro configured.
+✓ Configuration Gyroscope complete:
+  - Data Rate: 100 Hz (timer interrupt)
   - Range: 500 °/s
 
+Step 2.2: Init Accelerometer and Magnetometer driver...
+✓ Accelerometer and Magnetometer driver initialized.
+✓ Configuration Accelerometer and Magnetometer complete:
+  - Accelerometer: ±2g, High-Resolution, 100 Hz
+  - Magnetometer: Continuous, 100 Hz, High-Resolution
+
 Enabling DWT cycle counter for performance measurement...
+
 ✓ RTIC system ready. Starting main loop...
-===============================
-
-X:   12.34°/s | Y:   -5.67°/s | Z:    0.89°/s
-X:   12.45°/s | Y:   -5.72°/s | Z:    0.91°/s
-X:   12.38°/s | Y:   -5.69°/s | Z:    0.88°/s
-
-📊 System Stats (every 1000 process_data calls / ~2.5s):
-  Process Data Avg: 26.569μs (1000 calls)
-  Read Sensor Avg: 16.208μs (400 calls)
-  Total Time: 6509.903μs
-  Anomalies: 0
-  CPU Usage: 0.26%
-──────────────────────────────────────
-
-X:   12.52°/s | Y:   -5.75°/s | Z:    0.92°/s
-...
+==============================================================
 ```
-### Result:
-![log_example.png](docs/Screenshots/log_example.png)
 
-### Expected Behavior
-- **Data Rate:** New readings every 2.5 ms (400 Hz from TIM2 interrupt)
-- **Process Rate:** 400 readings processed per 2.5 seconds (one per interrupt)
-- **CPU Usage:** 0.24-0.28% during normal operation ✅
-- **Anomaly Detection:** Flags if sensor value changes exceed 100.0 °/s threshold
-- **Statistics Window:** Printed every 1000 process_data calls (~2.5 seconds)
-- **Data Quality:** 0 anomalies under normal, stationary conditions
-- **Task Separation:**
-  - **read_sensor:** Runs 400 times per window, avg ~16.2 μs
-  - **process_data:** Runs 400 times per window, avg ~26.6 μs
+### Periodic Real-Time Acquisition & Statistics
+```text
+✓ Read sensor data: X:    0.15°/s | Y:   -0.22°/s | Z:    0.05°/s
+✓ Read accelerometer data: X:   -0.02g | Y:    0.01g | Z:    0.99g
+✓ Read magnetometer data:  X:    0.18G | Y:   -0.34G | Z:    0.42G
 
+────────────────────────────────────────────────────────
+📊 Read_sensor Gyroscope Stats (every 1000 calls / ~10.0s):
+  Total Cycles: 1167400
+  Abnormal Count: 0
+  Read Sensor Avg: 16.214μs (1000 calls)
+  CPU Usage: 0.16%
+────────────────────────────────────────────────────────
+```
 ***
 
-## 🎯 Phase 3 (RTIC) Advantages Over Phase 2
-
-| Aspect | Phase 2 (Interrupt-based) | Phase 3 (RTIC) |
-|--------|---|---|
-| **Framework** | Manual interrupt handlers | RTIC framework with compile-time checks |
-| **Task Scheduling** | Single loop, cooperative | Preemptive multi-task with priorities |
-| **Code Safety** | Manual Mutex/critical sections | Automatic lock generation by RTIC |
-| **Measurement Accuracy** | Incomplete (main loop only) | **Complete (both tasks tracked)** |
-| **Priority Support** | ❌ None | ✅ Hardware-based preemption |
-| **Resource Sharing** | Manual locking required | Automatic RTIC-based protection |
-| **Determinism** | Fair | **Guaranteed by RTIC priority** |
-| **Development Speed** | Verbose, error-prone | Cleaner, less boilerplate |
-| **Real-Time Guarantees** | Loose | **Strict, verified at compile-time** |
-| **Debugging Support** | Basic | **Enhanced with RTIC introspection** |
-
-**CPU Usage Comparison:**
-- **Phase 2:** 0.10% (incomplete - only main loop measured)
-- **Phase 3:** 0.26% (accurate - both tasks included) ✅ **2.6x increase but correct!**
-
----
-
-## 🔗 References
-
-### Official Documentation
-- **RM0316 STM32F303 Reference Manual** ⭐ REQUIRED
-- **STM32F303VC Datasheet** (DS10190)
-- **ARM Cortex-M4 Devices Generic User Guide** (Optional)
-
-### Rust & Embedded Resources
-- [Rust Embedded Book](https://rust-embedded.github.io/book/)
-- [cortex-m Crate Documentation](https://docs.rs/cortex-m/)
-- [embedded-hal Traits](https://docs.rs/embedded-hal/latest/embedded_hal/)
-- [stm32f3-discovery HAL](https://docs.rs/stm32f3-discovery/)
-
-### Gyroscope Datasheets
-- [I3G4250D Datasheet](https://www.st.com/resource/en/datasheet/i3g4250d.pdf)
-- [L3GD20 Datasheet](https://www.st.com/resource/en/datasheet/l3gd20.pdf)
-- [L3GD20H Datasheet](https://www.mouser.com/datasheet/2/389/l3gd20h-954865.pdf)
-
 ## 📄 License
+
 MIT License - See [LICENSE](LICENSE) for details.
 
 ## 👤 Author
+
 Tan Dao
-
----
-
-## 📈 Project Phases
-
-1. **Phase 1: Busy-Wait Polling** - Initial implementation with continuous sensor polling (100% CPU)
-2. **Phase 2: Interrupt-Driven** - Timer interrupt with manual ISR handling (0.10% CPU, but incomplete measurement)
-3. **Phase 3: RTIC Framework** (Current) - Multi-task real-time system with accurate per-task metrics (0.26% CPU, complete measurement)
-
-**Last Updated:** September 2026  
-**Current Phase:** 3 (RTIC-based multi-task system) ✅
-
